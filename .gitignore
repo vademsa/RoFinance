@@ -1,6 +1,42 @@
 node_modules/
 dist/
-.env
-.env.local
+
+# Local environment and authentication files
+.env*
+*.env
+*.env.*
+!.env.example
+!.env.*.example
+!*.env.example
 .auth
+.auth.*
+.npmrc
+.netrc
+.pypirc
+.pgpass
+
+# Private keys and exported credentials
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kdbx
+id_rsa
+id_ed25519
+*service-account*.json
+*service_account*.json
+*credentials*.json
+
+# Local databases and infrastructure state may contain secrets
+*.db
+*.sqlite
+*.sqlite3
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+
 *.log
