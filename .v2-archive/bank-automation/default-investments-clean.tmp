@@ -1,0 +1,193 @@
+import { Jar, BankAccount, Transaction, BankCode, DebtItem } from '../types';
+
+export const DEFAULT_MONTHLY_INCOME = 0;
+
+const DEFAULT_JAR_TEMPLATES: Jar[] = [
+  {
+    id: 'jar-nec',
+    code: 'NEC',
+    name: 'Nhu cầu thiết yếu',
+    percentage: 40.0,
+    bankName: 'Techcombank',
+    bankCode: 'TCB',
+    accountNumber: '190368889999',
+    accountName: 'NGUYEN VAN A',
+    color: '#3B82F6', // Blue
+    description: 'Ăn uống, thuê nhà, điện nước, xăng xe, hóa đơn sinh hoạt',
+    targetBudget: 8000000, // 40% of 20M
+    currentSpent: 5420000,
+  },
+  {
+    id: 'jar-safe',
+    code: 'SAFE',
+    name: 'Quỹ an toàn',
+    percentage: 0,
+    bankName: 'Chưa cấu hình',
+    bankCode: 'VCB',
+    accountNumber: '',
+    accountName: '',
+    color: '#06B6D4',
+    description: 'Quỹ dự phòng khẩn cấp cho sức khỏe, mất thu nhập và chi phí ngoài kế hoạch',
+    targetBudget: 0,
+    currentSpent: 0,
+  },
+  {
+    id: 'jar-ffa',
+    code: 'FFA',
+    name: 'Tự do tài chính',
+    percentage: 9.30,
+    bankName: 'SeaBank',
+    bankCode: 'SEAB',
+    accountNumber: '000088992211',
+    accountName: 'NGUYEN VAN A',
+    color: '#10B981', // Emerald
+    description: 'Đầu tư cổ phiếu, tiết kiệm dài hạn, tạo dòng tiền bị động',
+    targetBudget: 1860000, // 9.3% of 20M
+    currentSpent: 0,
+  },
+  {
+    id: 'jar-play',
+    code: 'PLAY',
+    name: 'Hưởng thụ',
+    percentage: 9.45,
+    bankName: 'MBBank',
+    bankCode: 'MB',
+    accountNumber: '999966668888',
+    accountName: 'NGUYEN VAN A',
+    color: '#F59E0B', // Amber
+    description: 'Du lịch, mua sắm đồ cá nhân, giải trí, đi cafe, thư giãn',
+    targetBudget: 1890000, // 9.45% of 20M
+    currentSpent: 1650000, // High usage to trigger warning (>80%)
+  },
+  {
+    id: 'jar-give',
+    code: 'GIVE',
+    name: 'Cho đi',
+    percentage: 5.0,
+    bankName: 'Ví MoMo',
+    bankCode: 'MOMO',
+    accountNumber: '0987654321',
+    accountName: 'NGUYEN VAN A',
+    color: '#EC4899', // Pink
+    description: 'Quà biếu cha mẹ, từ thiện, giúp đỡ bạn bè, đám xá',
+    targetBudget: 1000000, // 5% of 20M
+    currentSpent: 450000,
+  },
+  {
+    id: 'jar-edu',
+    code: 'EDU',
+    name: 'Giáo dục',
+    percentage: 10.0,
+    bankName: 'Vietcombank',
+    bankCode: 'VCB',
+    accountNumber: '0071001234567',
+    accountName: 'NGUYEN VAN A',
+    color: '#8B5CF6', // Purple
+    description: 'Mua sách, khóa học online, hội thảo, nâng cao kỹ năng',
+    targetBudget: 2000000, // 10% of 20M
+    currentSpent: 1200000,
+  },
+  {
+    id: 'jar-debt',
+    code: 'DEBT',
+    name: 'Trả nợ',
+    percentage: 26.25,
+    bankName: 'Vietcombank',
+    bankCode: 'VCB',
+    accountNumber: '0071009876543',
+    accountName: 'NGUYEN VAN A',
+    color: '#EF4444', // Red
+    description: 'Thanh toán khoản vay mua nhà/xe, trả thẻ tín dụng hàng tháng',
+    targetBudget: 5250000, // 26.25% of 20M
+    currentSpent: 5300000, // >100% usage to trigger danger alert
+  },
+];
+
+// New V1 accounts start clean. Percentages and descriptions are templates only;
+// all account details, balances, budgets, and spending are entered by the user.
+export const DEFAULT_JARS: Jar[] = DEFAULT_JAR_TEMPLATES.map((jar) => ({
+  ...jar,
+  bankName: 'Chưa cấu hình',
+  bankCode: '',
+  accountNumber: '',
+  accountName: '',
+  targetBudget: 0,
+  currentSpent: 0,
+}));
+
+export const DEFAULT_BANK_ACCOUNTS: BankAccount[] = [];
+
+export const INITIAL_TRANSACTIONS: Transaction[] = [];
+
+export const CATEGORIES_BY_JAR_CODE: Record<string, string[]> = {
+  NEC: ['Tiền thuê nhà', 'Điện nước & Internet', 'Đi chợ & Siêu thị', 'Xăng xe & Bãi đỗ', 'Hóa đơn sinh hoạt', 'Khác'],
+  SAFE: ['Y tế khẩn cấp', 'Mất thu nhập', 'Sửa chữa khẩn cấp', 'Chi phí bảo hiểm', 'Dự phòng khác'],
+  FFA: ['Cổ phiếu & Chứng khoán', 'Gửi tiết kiệm', 'Vàng & Bất động sản', 'Quỹ chỉ số', 'Khác'],
+  PLAY: ['Ăn uống & Giải trí', 'Du lịch & Nghỉ dưỡng', 'Mua sắm thời trang', 'Phim ảnh & Game', 'Spa & Chăm sóc', 'Khác'],
+  GIVE: ['Quà biếu gia đình', 'Mừng cưới / Sinh nhật', 'Từ thiện & Quyên góp', 'Giúp đỡ bạn bè', 'Khác'],
+  EDU: ['Khóa học online', 'Sách & Tạp chí', 'Hội thảo & Workshop', 'Dụng cụ học tập', 'Khác'],
+  DEBT: ['Trả nợ ngân hàng', 'Thanh toán thẻ tín dụng', 'Trả nợ người thân', 'Khác'],
+};
+
+export const INCOME_CATEGORIES = [
+  'Lương hàng tháng',
+  'Thu nhập làm thêm',
+  'Thu hồi tiền cho vay',
+  'Lãi cho vay',
+  'Tiền thưởng',
+  'Lợi nhuận đầu tư',
+  'Bán tài sản',
+  'Quà tặng / Hoàn tiền',
+  'Thu nhập khác',
+];
+
+export const BANK_OPTIONS: { code: BankCode; name: string; shortName: string }[] = [
+  { code: 'TCB', name: 'Techcombank (Ngân hàng Kỹ Thương)', shortName: 'Techcombank' },
+  { code: 'SEAB', name: 'SeaBank (Ngân hàng Đông Nam Á)', shortName: 'SeaBank' },
+  { code: 'MB', name: 'MBBank (Ngân hàng Quân Đội)', shortName: 'MBBank' },
+  { code: 'MOMO', name: 'Ví điện tử MoMo', shortName: 'Ví MoMo' },
+  { code: 'VCB', name: 'Vietcombank (Ngân hàng Ngoại Thương)', shortName: 'Vietcombank' },
+  { code: 'VPB', name: 'VPBank (Ngân hàng Thịnh Vượng)', shortName: 'VPBank' },
+  { code: 'ACB', name: 'ACB (Ngân hàng Á Châu)', shortName: 'ACB' },
+  { code: 'BIDV', name: 'BIDV (Ngân hàng ĐT&PT Việt Nam)', shortName: 'BIDV' },
+  { code: 'CTG', name: 'VietinBank (Ngân hàng Công Thương)', shortName: 'VietinBank' },
+  { code: 'AGRIBANK', name: 'Agribank (Ngân hàng Nông nghiệp)', shortName: 'Agribank' },
+  { code: 'TPB', name: 'TPBank (Ngân hàng Tiên Phong)', shortName: 'TPBank' },
+  { code: 'VIB', name: 'VIB (Ngân hàng Quốc Tế)', shortName: 'VIB' },
+  { code: 'OCB', name: 'OCB (Ngân hàng Phương Đông)', shortName: 'OCB' },
+  { code: 'MSB', name: 'MSB (Ngân hàng Hàng Hải)', shortName: 'MSB' },
+  { code: 'STB', name: 'Sacombank (Ngân hàng Sài Gòn Thương Tín)', shortName: 'Sacombank' },
+  { code: 'HDB', name: 'HDBank (Ngân hàng Phát triển TP.HCM)', shortName: 'HDBank' },
+  { code: 'SHB', name: 'SHB (Ngân hàng Sài Gòn Hà Nội)', shortName: 'SHB' },
+  { code: 'EIB', name: 'Eximbank (Ngân hàng Xuất Nhập Khẩu)', shortName: 'Eximbank' },
+  { code: 'LPB', name: 'LPBank (Ngân hàng Lộc Phát)', shortName: 'LPBank' },
+  { code: 'KLB', name: 'KienlongBank', shortName: 'KienlongBank' },
+  { code: 'NAB', name: 'Nam A Bank', shortName: 'Nam A Bank' },
+  { code: 'BAB', name: 'Bac A Bank', shortName: 'Bac A Bank' },
+  { code: 'PVCOMBANK', name: 'PVcomBank', shortName: 'PVcomBank' },
+  { code: 'VAB', name: 'VietABank', shortName: 'VietABank' },
+  { code: 'ZALOPAY', name: 'Ví điện tử ZaloPay', shortName: 'Ví ZaloPay' },
+  { code: 'SHOPEEPAY', name: 'Ví điện tử ShopeePay', shortName: 'Ví ShopeePay' },
+];
+
+export const DEFAULT_USD_VND_RATE = 25450; // Standard USD to VND exchange rate
+
+export const POPULAR_BINANCE_SYMBOLS = [
+  { symbol: 'BTCUSDT', coin: 'BTC', name: 'Bitcoin' },
+  { symbol: 'ETHUSDT', coin: 'ETH', name: 'Ethereum' },
+  { symbol: 'BNBUSDT', coin: 'BNB', name: 'BNB' },
+  { symbol: 'SOLUSDT', coin: 'SOL', name: 'Solana' },
+  { symbol: 'XRPUSDT', coin: 'XRP', name: 'Ripple' },
+  { symbol: 'DOGEUSDT', coin: 'DOGE', name: 'Dogecoin' },
+  { symbol: 'ADAUSDT', coin: 'ADA', name: 'Cardano' },
+  { symbol: 'AVAXUSDT', coin: 'AVAX', name: 'Avalanche' },
+  { symbol: 'NEARUSDT', coin: 'NEAR', name: 'NEAR Protocol' },
+  { symbol: 'DOTUSDT', coin: 'DOT', name: 'Polkadot' },
+  { symbol: 'LINKUSDT', coin: 'LINK', name: 'Chainlink' },
+  { symbol: 'SUIUSDT', coin: 'SUI', name: 'Sui' },
+  { symbol: 'PEPEUSDT', coin: 'PEPE', name: 'Pepe' },
+];
+
+export const DEFAULT_CRYPTO_ASSETS = [];
+
+export const DEFAULT_DEBT_ITEMS: DebtItem[] = [];

@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "RoFinance Techcombank Local Sync",
+  "version": "0.4.0",
+  "description": "Đồng bộ response giao dịch Techcombank vào RoFinance mà không thu thập mật khẩu hoặc token.",
+  "permissions": ["alarms", "debugger", "storage", "tabs"],
+  "host_permissions": [
+    "https://onlinebanking.techcombank.com.vn/*",
+    "https://rof.aprwatch.com/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_title": "RoFinance TCB Sync",
+    "default_popup": "popup.html"
+  }
+}

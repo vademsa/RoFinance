@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RoFinance TCB Sync</title>
+    <style>
+      body{margin:0;width:340px;background:#09090b;color:#f4f4f5;font:13px system-ui,sans-serif}main{padding:16px}.brand{display:flex;gap:10px;align-items:center;margin-bottom:16px}.logo{width:36px;height:36px;border-radius:12px}h1{font-size:14px;margin:0}p{color:#a1a1aa;font-size:11px;line-height:1.5;margin:3px 0 0}label{display:block;font-size:11px;font-weight:700;color:#d4d4d8;margin:12px 0 6px}input,select{box-sizing:border-box;width:100%;padding:10px;border-radius:10px;border:1px solid #3f3f46;background:#18181b;color:#fff;outline:none}input:focus,select:focus{border-color:#6366f1}.auto{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:10px;border:1px solid #3f3f46;border-radius:10px;background:#18181b}.auto label{margin:0}.auto input{width:18px;height:18px;accent-color:#10b981}.auto select{width:112px;padding:7px}button{width:100%;margin-top:12px;padding:11px;border:0;border-radius:11px;background:#4f46e5;color:#fff;font-weight:800;cursor:pointer}button:hover{background:#6366f1}.status{margin-top:12px;padding:10px;border:1px solid #3f3f46;border-radius:10px;background:#18181b;color:#d4d4d8;font-size:11px;line-height:1.45}.note{margin-top:12px;color:#71717a;font-size:10px;line-height:1.45}
+    </style>
+  </head>
+  <body><main><div class="brand"><img class="logo" src="favicon.svg" alt="RoFinance"><div><h1>RoFinance TCB Sync <small>v0.4</small></h1><p>Không thu thập mật khẩu hoặc OTP</p></div></div><label for="server">RoFinance URL</label><input id="server" value="https://rof.aprwatch.com"><label for="key">Khóa ghép nối từ /tcb</label><input id="key" type="password" autocomplete="off" placeholder="rof_tcb_..."><div class="auto"><label for="auto">Tự động đồng bộ</label><input id="auto" type="checkbox" checked><select id="interval" aria-label="Chu kỳ đồng bộ"><option value="2">Mỗi 2 phút</option><option value="3">Mỗi 3 phút</option><option value="4" selected>Mỗi 4 phút</option></select></div><button id="start">Lưu & Bắt đầu đồng bộ</button><div class="status" id="status">Chưa bắt đầu.</div><div class="note">Chu kỳ mặc định 4 phút, thấp hơn TTL 300 giây. Hãy giữ Chrome và tab Techcombank mở. Đóng DevTools để tránh xung đột quyền Debugger.</div></main><script src="popup.js"></script></body>
+</html>

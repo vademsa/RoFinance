@@ -1,0 +1,56 @@
+*** Begin Patch
+*** Update File: /home/roll/RoFinance/src/constants/defaultData.ts
+@@
+   { symbol: 'PEPEUSDT', coin: 'PEPE', name: 'Pepe' },
+ ];
+ 
+-export const DEFAULT_CRYPTO_ASSETS = [
+-  {
+-    id: 'crypto-1',
+-    symbol: 'BTC',
+-    name: 'Bitcoin',
+-    amountHeld: 0.15,
+-    buyPriceUSD: 62000,
+-    buyDate: '2026-03-15',
+-    notes: 'Tích lũy từ hũ Tự Do Tài Chính (FFA)',
+-    linkedJarCode: 'FFA',
+-  },
+-  {
+-    id: 'crypto-2',
+-    symbol: 'ETH',
+-    name: 'Ethereum',
+-    amountHeld: 1.5,
+-    buyPriceUSD: 3100,
+-    buyDate: '2026-04-10',
+-    notes: 'Đầu tư staking dài hạn',
+-    linkedJarCode: 'FFA',
+-  },
+-  {
+-    id: 'crypto-3',
+-    symbol: 'SOL',
+-    name: 'Solana',
+-    amountHeld: 12.0,
+-    buyPriceUSD: 135,
+-    buyDate: '2026-05-20',
+-    notes: 'Hệ sinh thái Solana DeFi',
+-    linkedJarCode: 'FFA',
+-  },
+-];
++export const DEFAULT_CRYPTO_ASSETS = [];
+ 
+-export const DEFAULT_DEBT_ITEMS: DebtItem[] = [
+-  {
+-    id: 'debt-1',
+-    name: 'Vay tín dụng Vietcombank mua xe',
+-    totalAmount: 63000000,
+-    remainingAmount: 31500000,
+-    startMonth: '2026-01',
+-    endMonth: '2026-12',
+-    monthlyPayment: 5250000, // 26.25% of 20M
+-    status: 'active',
+-    notes: 'Trích nợ tự động hàng tháng ngày 20 qua VCB',
+-    reallocateTargetCode: 'FFA',
+-  },
+-];
++export const DEFAULT_DEBT_ITEMS: DebtItem[] = [];
+*** End Patch

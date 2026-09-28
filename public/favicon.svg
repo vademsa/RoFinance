@@ -1,0 +1,31 @@
+<svg width="512" height="512" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="roBgGradient" x1="0" y1="0" x2="120" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="50%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="roGoldAccent" x1="20" y1="20" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+    <linearGradient id="roLineGradient" x1="30" y1="80" x2="90" y2="35" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="50%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#34D399"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="108" height="108" rx="28" fill="url(#roBgGradient)"/>
+  <rect x="12" y="12" width="96" height="96" rx="22" fill="#09090B" fill-opacity="0.88"/>
+  <circle cx="60" cy="26" r="4.5" fill="#10B981"/>
+  <circle cx="85" cy="40" r="4.5" fill="#3B82F6"/>
+  <circle cx="85" cy="70" r="4.5" fill="#8B5CF6"/>
+  <circle cx="60" cy="85" r="4.5" fill="#EC4899"/>
+  <circle cx="35" cy="70" r="4.5" fill="#F59E0B"/>
+  <circle cx="35" cy="40" r="4.5" fill="#06B6D4"/>
+  <polygon points="60,26 85,40 85,70 60,85 35,70 35,40" fill="none" stroke="#27272A" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <path d="M42 82V38C42 38 52 34 66 38C78 41.5 76 56 64 58C56 59.3 42 58 42 58" stroke="url(#roLineGradient)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M48 68L64 54L78 66L92 38" stroke="url(#roGoldAccent)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M84 38H92V46" stroke="#10B981" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M92 38L93.5 33L98.5 31.5L93.5 30L92 25L90.5 30L85.5 31.5L90.5 33L92 38Z" fill="#F59E0B"/>
+</svg>

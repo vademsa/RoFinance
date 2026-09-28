@@ -1,0 +1,6 @@
+{
+  "name": "RoFinance - Quản Lý Tài Chính Hũ",
+  "description": "Ứng dụng quản lý tài chính cá nhân theo mô hình 6 Hũ Tài Chính RoFinance, tự động phân bổ thu nhập, cảnh báo hạn mức và quản lý đầu tư crypto realtime.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

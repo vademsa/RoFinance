@@ -1,0 +1,376 @@
+*** Begin Patch
+*** Update File: /home/roll/RoFinance/server.ts
+@@
+     }
+   });
+ 
+-  // V2 banking automation is deliberately disabled in V1. Keeping the implementation
+-  // behind an explicit server flag preserves migration work without exposing endpoints.
+-  if (process.env.ENABLE_V2_BANK_AUTOMATION === 'true') {
+-  let vietQRBankCache: { expiresAt: number; banks: any[] } | null = null;
+-  app.get('/api/vietqr/banks', requireAuth, async (_req, res) => {
+-    try {
+-      if (vietQRBankCache && vietQRBankCache.expiresAt > Date.now()) {
+-        res.json({ banks: vietQRBankCache.banks });
+-        return;
+-      }
+-      const response = await fetch('https://api.vietqr.io/v2/banks', {
+-        signal: AbortSignal.timeout(8_000),
+-      });
+-      const payload: any = await response.json();
+-      if (!response.ok || payload?.code !== '00' || !Array.isArray(payload?.data)) {
+-        throw new Error('Không tải được danh sách ngân hàng VietQR');
+-      }
+-      const banks = payload.data
+-        .filter((bank: any) => bank?.bin && bank?.code)
+-        .map((bank: any) => ({
+-          bin: String(bank.bin),
+-          code: String(bank.code),
+-          name: String(bank.name || bank.shortName || bank.code),
+-          shortName: String(bank.shortName || bank.code),
+-          logo: String(bank.logo || ''),
+-          lookupSupported: Number(bank.lookupSupported) === 1,
+-        }))
+-        .sort((a: any, b: any) => a.shortName.localeCompare(b.shortName));
+-      vietQRBankCache = { banks, expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
+-      res.json({ banks });
+-    } catch (error: any) {
+-      res.status(502).json({ error: error.message || 'Không thể kết nối VietQR' });
+-    }
+-  });
+-
+-  const vietQRLookupLimiter = rateLimit({ windowMs: 60_000, limit: 10 });
+-  app.post('/api/vietqr/lookup', requireAuth, vietQRLookupLimiter, async (req, res) => {
+-    const bin = String(req.body?.bin || '').replace(/\D/g, '');
+-    const accountNumber = String(req.body?.accountNumber || '').replace(/\D/g, '');
+-    if (!/^\d{6}$/.test(bin) || !/^\d{6,19}$/.test(accountNumber)) {
+-      res.status(400).json({ error: 'Ngân hàng hoặc số tài khoản không hợp lệ' });
+-      return;
+-    }
+-    const clientId = await getConfigValue<string>('vietqr_client_id') || process.env.VIETQR_CLIENT_ID;
+-    const apiKey = await getConfigValue<string>('vietqr_api_key') || process.env.VIETQR_API_KEY;
+-    if (!clientId || !apiKey) {
+-      res.status(503).json({ error: 'VietQR Lookup chưa được cấu hình Client ID và API Key' });
+-      return;
+-    }
+-    try {
+-      const response = await fetch('https://api.vietqr.io/v2/lookup', {
+-        method: 'POST',
+-        headers: {
+-          'Content-Type': 'application/json',
+-          'x-client-id': clientId,
+-          'x-api-key': apiKey,
+-        },
+-        body: JSON.stringify({ bin: Number(bin), accountNumber }),
+-        signal: AbortSignal.timeout(10_000),
+-      });
+-      const payload: any = await response.json().catch(() => ({}));
+-      if (!response.ok || payload?.code !== '00' || !payload?.data?.accountName) {
+-        res.status(response.status === 429 ? 429 : 422).json({
+-          error: payload?.desc || 'Không xác minh được số tài khoản này',
+-        });
+-        return;
+-      }
+-      res.json({ accountName: String(payload.data.accountName).trim() });
+-    } catch (error: any) {
+-      res.status(502).json({ error: error.name === 'TimeoutError' ? 'VietQR phản hồi quá chậm' : 'Không thể kết nối VietQR' });
+-    }
+-  });
+-
+-  const hashConnectorToken = (token: string) =>
+-    createHash('sha256').update(token).digest('hex');
+-  const tcbEventClients = new Map<string, Set<any>>();
+-
+-  const publishTCBEvent = (userId: string, payload: Record<string, unknown>) => {
+-    const clients = tcbEventClients.get(userId);
+-    if (!clients) return;
+-    const event = `event: tcb-sync\ndata: ${JSON.stringify(payload)}\n\n`;
+-    clients.forEach((client) => client.write(event));
+-  };
+-
+-  app.get('/api/tcb/events', requireAuth, (req, res) => {
+-    const userId = req.session.userId!;
+-    res.setHeader('Content-Type', 'text/event-stream');
+-    res.setHeader('Cache-Control', 'no-cache, no-transform');
+-    res.setHeader('Connection', 'keep-alive');
+-    res.setHeader('X-Accel-Buffering', 'no');
+-    res.flushHeaders();
+-    res.write(`event: connected\ndata: {"connected":true}\n\n`);
+-    const clients = tcbEventClients.get(userId) || new Set();
+-    clients.add(res);
+-    tcbEventClients.set(userId, clients);
+-    const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 25_000);
+-    req.on('close', () => {
+-      clearInterval(heartbeat);
+-      clients.delete(res);
+-      if (clients.size === 0) tcbEventClients.delete(userId);
+-    });
+-  });
+-
+-  app.get('/api/tcb/connector', requireAuth, async (req, res) => {
+-    const [connectorResult, transactionResult, countResult] = await Promise.all([
+-      pool.query(
+-        `SELECT created_at, last_synced_at, last_error
+-         FROM tcb_connectors WHERE user_id = $1`,
+-        [req.session.userId]
+-      ),
+-      pool.query(
+-        `SELECT external_id, direction, amount::float8 AS amount, currency,
+-                booking_date, creation_time, description,
+-                running_balance::float8 AS running_balance, state
+-         FROM tcb_imported_transactions
+-         WHERE user_id = $1
+-         ORDER BY COALESCE(creation_time, booking_date::timestamptz) DESC NULLS LAST
+-         LIMIT 20`,
+-        [req.session.userId]
+-      ),
+-      pool.query(
+-        'SELECT COUNT(*)::int AS count FROM tcb_imported_transactions WHERE user_id = $1',
+-        [req.session.userId]
+-      ),
+-    ]);
+-    const connector = connectorResult.rows[0] || null;
+-    res.json({
+-      connected: Boolean(connector),
+-      connector,
+-      transactionCount: countResult.rows[0]?.count || 0,
+-      transactions: transactionResult.rows,
+-    });
+-  });
+-
+-  app.post('/api/tcb/connector', requireAuth, async (req, res) => {
+-    const token = `rof_tcb_${randomBytes(32).toString('base64url')}`;
+-    await pool.query(
+-      `INSERT INTO tcb_connectors (user_id, token_hash, created_at, last_synced_at, last_error)
+-       VALUES ($1, $2, NOW(), NULL, NULL)
+-       ON CONFLICT (user_id) DO UPDATE
+-       SET token_hash = EXCLUDED.token_hash,
+-           created_at = NOW(), last_synced_at = NULL, last_error = NULL`,
+-      [req.session.userId, hashConnectorToken(token)]
+-    );
+-    res.json({ token });
+-  });
+-
+-  app.delete('/api/tcb/connector', requireAuth, async (req, res) => {
+-    await pool.query('DELETE FROM tcb_connectors WHERE user_id = $1', [req.session.userId]);
+-    res.json({ success: true });
+-  });
+-
+-  const tcbIngestLimiter = rateLimit({
+-    windowMs: 60_000,
+-    limit: 30,
+-    standardHeaders: true,
+-    legacyHeaders: false,
+-  });
+-
+-  app.post('/api/tcb/ingest', tcbIngestLimiter, async (req, res) => {
+-    const token = String(req.get('x-rofinance-connector-key') || '').trim();
+-    if (!token.startsWith('rof_tcb_') || token.length > 100) {
+-      res.status(401).json({ error: 'Khóa ghép nối không hợp lệ' });
+-      return;
+-    }
+-    const connectorResult = await pool.query<{ user_id: string }>(
+-      'SELECT user_id FROM tcb_connectors WHERE token_hash = $1',
+-      [hashConnectorToken(token)]
+-    );
+-    const userId = connectorResult.rows[0]?.user_id;
+-    if (!userId) {
+-      res.status(401).json({ error: 'Khóa ghép nối đã hết hiệu lực hoặc bị thu hồi' });
+-      return;
+-    }
+-    const items = Array.isArray(req.body?.transactions) ? req.body.transactions.slice(0, 200) : [];
+-    if (items.length === 0) {
+-      res.status(400).json({ error: 'Không tìm thấy giao dịch Techcombank trong dữ liệu gửi lên' });
+-      return;
+-    }
+-
+-    const dataResult = await pool.query('SELECT data FROM user_data WHERE user_id = $1', [userId]);
+-    const currentData = dataResult.rows[0]?.data || {};
+-    const jars = Array.isArray(currentData.jars) ? currentData.jars : [];
+-    const bankAccounts = Array.isArray(currentData.bankAccounts) ? currentData.bankAccounts : [];
+-    const ownership = buildTCBOwnership(jars, bankAccounts);
+-    const necJar = jars.find((jar: any) => String(jar?.code || '').toUpperCase() === 'NEC');
+-    const arrangementAccounts = buildArrangementAccountMap(items);
+-    const newTransactions: any[] = [];
+-    const processedAutoIds = new Set<string>();
+-    const balanceUpdates = new Map<string, { balance: number; lastSynced: string; eventTime: number }>();
+-    let recorded = 0;
+-    let corrected = 0;
+-    let imported = 0;
+-    for (const item of items) {
+-      const direction = item?.creditDebitIndicator === 'CRDT' ? 'CRDT' : item?.creditDebitIndicator === 'DBIT' ? 'DBIT' : '';
+-      const amount = Number(item?.transactionAmountCurrency?.amount);
+-      const externalId = String(item?.additions?.externalId || item?.id || '').trim().slice(0, 180);
+-      const state = String(item?.state || '').toUpperCase();
+-      if (!externalId || !direction || !Number.isFinite(amount) || amount < 0 || (state && state !== 'COMPLETED')) continue;
+-      processedAutoIds.add(`bank-tcb-${externalId}`);
+-      const creationTime = item?.creationTime && !Number.isNaN(Date.parse(String(item.creationTime)))
+-        ? String(item.creationTime)
+-        : null;
+-      const result = await pool.query(
+-        `INSERT INTO tcb_imported_transactions
+-          (user_id, external_id, arrangement_id, direction, amount, currency,
+-           booking_date, creation_time, description, running_balance, state, payload)
+-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+-         ON CONFLICT (user_id, external_id) DO UPDATE SET
+-           arrangement_id = EXCLUDED.arrangement_id,
+-           direction = EXCLUDED.direction,
+-           amount = EXCLUDED.amount,
+-           currency = EXCLUDED.currency,
+-           booking_date = EXCLUDED.booking_date,
+-           creation_time = EXCLUDED.creation_time,
+-           description = EXCLUDED.description,
+-           running_balance = EXCLUDED.running_balance,
+-           state = EXCLUDED.state,
+-           payload = EXCLUDED.payload
+-         RETURNING (xmax = 0) AS inserted`,
+-        [
+-          userId,
+-          externalId,
+-          String(item?.arrangementId || '').slice(0, 180) || null,
+-          direction,
+-          amount,
+-          String(item?.transactionAmountCurrency?.currencyCode || 'VND').slice(0, 8),
+-          /^\d{4}-\d{2}-\d{2}$/.test(String(item?.bookingDate || '')) ? item.bookingDate : null,
+-          creationTime,
+-          String(item?.description || '').slice(0, 1000) || null,
+-          Number.isFinite(Number(item?.runningBalance)) ? Number(item.runningBalance) : null,
+-          String(item?.state || '').slice(0, 30) || null,
+-          JSON.stringify(item),
+-        ]
+-      );
+-      if (result.rows[0]?.inserted) imported += 1;
+-
+-      const additions = item?.additions || {};
+-      const classification = classifyTCBTransaction(item, ownership, arrangementAccounts);
+-      const { currentAccount, counterpartyAccount, sourceJar, counterpartyJar, isInternalTransfer } = classification;
+-      const reference = String(item?.reference || '');
+-      const hasDebitSideInBatch = direction === 'CRDT' && items.some((candidate: any) =>
+-        candidate !== item &&
+-        candidate?.creditDebitIndicator === 'DBIT' &&
+-        Number(candidate?.transactionAmountCurrency?.amount) === amount &&
+-        reference && String(candidate?.reference || '') === reference &&
+-        classifyTCBTransaction(candidate, ownership, arrangementAccounts).isInternalTransfer
+-      );
+-
+-      if (!(isInternalTransfer && hasDebitSideInBatch)) {
+-        const transactionType = classification.transactionType;
+-        const transactionJar = isInternalTransfer
+-          ? direction === 'CRDT' ? counterpartyJar : (necJar || sourceJar)
+-          : (necJar || sourceJar);
+-        const transferToJar = isInternalTransfer
+-          ? direction === 'DBIT' ? counterpartyJar : necJar
+-          : undefined;
+-        const sourceBankCode = isInternalTransfer
+-          ? direction === 'CRDT'
+-            ? String(
+-                counterpartyJar?.bankCode ||
+-                inferBankCodeFromTCBDetails(`${item?.description || ''} ${additions.additionalInfo || ''}`) ||
+-                item?.counterPartyBankName ||
+-                additions.debitBank ||
+-                ''
+-              ).trim()
+-            : 'TCB'
+-          : undefined;
+-        const destinationBankCode = isInternalTransfer
+-          ? direction === 'CRDT'
+-            ? 'TCB'
+-            : String(counterpartyJar?.bankCode || item?.counterPartyBankName || additions.creditBank || '').trim()
+-          : undefined;
+-        newTransactions.push({
+-          id: `bank-tcb-${externalId}`,
+-          type: transactionType,
+-          amount,
+-          jarId: transactionJar?.id || '',
+-          transferToJarId: transferToJar?.id || undefined,
+-          category: isInternalTransfer
+-            ? 'Chuyển khoản nội bộ'
+-            : direction === 'CRDT'
+-              ? 'Thu nhập ngân hàng'
+-              : 'Chi tiêu ngân hàng',
+-          date: /^\d{4}-\d{2}-\d{2}$/.test(String(item?.bookingDate || ''))
+-            ? item.bookingDate
+-            : new Date().toISOString().slice(0, 10),
+-          description: String(item?.description || 'Giao dịch Techcombank').slice(0, 1000),
+-          bankName: 'Techcombank',
+-          sourceAccountNumber: (direction === 'CRDT' ? counterpartyAccount : currentAccount) || undefined,
+-          recipientAccount: (direction === 'CRDT' ? currentAccount : counterpartyAccount) || undefined,
+-          counterpartyName: classification.counterpartyName || undefined,
+-          sourceBankCode: sourceBankCode || undefined,
+-          destinationBankCode: destinationBankCode || undefined,
+-          recipientBank: String(item?.counterPartyBankName || additions.creditBank || '').slice(0, 160) || undefined,
+-          bankTransactionId: externalId,
+-          isAutoImported: true,
+-        });
+-      }
+-
+-      const runningBalance = Number(item?.runningBalance);
+-      if (ownership.ownedAccounts.has(currentAccount) && Number.isFinite(runningBalance)) {
+-        const syncedAt = new Date().toLocaleString('vi-VN', { hour12: false });
+-        const eventTime = creationTime
+-          ? Date.parse(creationTime)
+-          : Date.parse(`${item?.bookingDate || '1970-01-01'}T00:00:00Z`);
+-        const existingUpdate = balanceUpdates.get(currentAccount);
+-        if (!existingUpdate || eventTime > existingUpdate.eventTime) {
+-          balanceUpdates.set(currentAccount, { balance: runningBalance, lastSynced: syncedAt, eventTime });
+-        }
+-      }
+-    }
+-    if (processedAutoIds.size > 0 || balanceUpdates.size > 0) {
+-      const db = await pool.connect();
+-      try {
+-      await db.query('BEGIN');
+-      await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [userId]);
+-      const latestResult = await db.query('SELECT data FROM user_data WHERE user_id = $1 FOR UPDATE', [userId]);
+-      const latestData = normalizeTCBUserData(latestResult.rows[0]?.data || {});
+-      const latestTransactions = Array.isArray(latestData.transactions) ? latestData.transactions : [];
+-      const latestBankAccounts = Array.isArray(latestData.bankAccounts) ? latestData.bankAccounts : [];
+-      const existingIds = new Set(latestTransactions.map((transaction: any) => transaction.id));
+-      const replacementById = new Map(newTransactions.map((transaction) => [transaction.id, transaction]));
+-      recorded = newTransactions.filter((transaction) => !existingIds.has(transaction.id)).length;
+-      corrected = latestTransactions.filter((transaction: any) => {
+-        const replacement: any = replacementById.get(transaction.id);
+-        return replacement && JSON.stringify(transaction) !== JSON.stringify(replacement);
+-      }).length;
+-      const mergedTransactions = [
+-        ...newTransactions,
+-        ...latestTransactions.filter((transaction: any) => !processedAutoIds.has(transaction.id)),
+-      ];
+-      const nextBankAccounts = normalizeTCBUserData({ bankAccounts: latestBankAccounts }).bankAccounts.map((account: any) => {
+-        const update = balanceUpdates.get(normalizeAccount(account.accountNumber));
+-        return update
+-          ? { ...account, balance: update.balance, lastSynced: update.lastSynced, status: 'connected' }
+-          : account;
+-      });
+-      await db.query(
+-        `INSERT INTO user_data (user_id, data) VALUES ($1, $2)
+-         ON CONFLICT (user_id) DO UPDATE
+-         SET data = user_data.data || EXCLUDED.data, updated_at = NOW()`,
+-        [userId, JSON.stringify({ transactions: mergedTransactions, bankAccounts: nextBankAccounts })]
+-      );
+-      await db.query('COMMIT');
+-      } catch (error) {
+-        await db.query('ROLLBACK');
+-        throw error;
+-      } finally {
+-        db.release();
+-      }
+-    }
+-    await pool.query(
+-      'UPDATE tcb_connectors SET last_synced_at = NOW(), last_error = NULL WHERE user_id = $1',
+-      [userId]
+-    );
+-    publishTCBEvent(userId, {
+-      received: items.length,
+-      imported,
+-      recorded,
+-      corrected,
+-      syncedAt: new Date().toISOString(),
+-    });
+-    res.json({ success: true, received: items.length, imported, recorded, corrected });
+-  });
+-  }
+ 
+   // Manual balance entry only; this endpoint never contacts a bank.
+   app.post('/api/bank/balance', requireAuth, async (req, res) => {
+*** End Patch
