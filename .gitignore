@@ -29,6 +29,8 @@ id_ed25519
 *service-account*.json
 *service_account*.json
 *credentials*.json
+firebase-applet-config.json
+rofinance.zip
 
 # Local databases and infrastructure state may contain secrets
 *.db
