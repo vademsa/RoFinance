@@ -582,20 +582,20 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
                                 {asset.name} ({asset.symbol})
                               </div>
                               <div className="text-[10px] text-zinc-400">
-                                Hũ: {asset.linkedJarCode || 'FFA'} • {asset.notes || 'Tích sản'}
+                                Hũ: {asset.linkedJarCode || 'FFA'} • {asset.notes ? <span data-no-translate="true">{asset.notes}</span> : 'Tích sản'}
                               </div>
                             </div>
                           </div>
                         </td>
 
                         <td className="py-4 px-4 text-right font-mono font-bold text-white">
-                          {asset.amountHeld} {asset.symbol}
+                          {isAmountsHidden ? '••••' : asset.amountHeld} {asset.symbol}
                         </td>
 
                         <td className="py-4 px-4 text-right font-mono text-zinc-400">
                           {asset.buyPriceUSD === 0 ? (
                             <span className="inline-flex rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-[10px] font-bold text-sky-400">
-                              Airdrop · $0
+                              Airdrop · {formatUSD(0, isAmountsHidden)}
                             </span>
                           ) : (
                             formatUSD(asset.buyPriceUSD, isAmountsHidden)
@@ -858,7 +858,7 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
                             </span>
                             <span className="text-right">
                               <strong className="block text-xs font-mono text-amber-400">
-                                {formatUSD(coin.price)}
+                                {formatUSD(coin.price, isAmountsHidden)}
                               </strong>
                               <span className="text-[10px] text-zinc-400">{coin.exchange}</span>
                             </span>
@@ -893,12 +893,12 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
                 </div>
                 <div className="relative">
                   <input
-                    type="number"
+                    type={isAmountsHidden ? 'password' : 'number'}
                     min="0"
                     step="any"
                     value={formBuyPrice}
                     onChange={(e) => setFormBuyPrice(e.target.value)}
-                    placeholder="60000"
+                    placeholder={isAmountsHidden ? '••••' : '60000'}
                     required
                     className="w-full pl-4 pr-14 p-3 bg-[#121214] border border-zinc-700 rounded-2xl font-black font-mono text-sm text-amber-400 focus:outline-none focus:border-amber-400"
                   />
@@ -917,11 +917,11 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
                   3. Số Lượng Nắm Giữ
                 </label>
                 <input
-                  type="number"
+                  type={isAmountsHidden ? 'password' : 'number'}
                   step="any"
                   value={formAmount}
                   onChange={(e) => setFormAmount(e.target.value)}
-                  placeholder="1.0"
+                  placeholder={isAmountsHidden ? '••••' : '1.0'}
                   required
                   className="w-full p-3 bg-[#121214] border border-zinc-700 rounded-2xl font-black font-mono text-sm text-white focus:outline-none focus:border-amber-400"
                 />

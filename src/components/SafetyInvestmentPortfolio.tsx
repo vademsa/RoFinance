@@ -328,7 +328,7 @@ export const SafetyInvestmentPortfolio: React.FC<SafetyInvestmentPortfolioProps>
                         .slice(0, 3)
                         .map((withdrawal) => (
                           <div key={withdrawal.id} className="flex items-center justify-between gap-3 text-[10px] text-zinc-400">
-                            <span>{formatDateVI(withdrawal.date)}{withdrawal.notes ? ` · ${withdrawal.notes}` : ''}</span>
+                            <span>{formatDateVI(withdrawal.date)}{withdrawal.notes && <> · <span data-no-translate="true">{withdrawal.notes}</span></>}</span>
                             <span className="shrink-0 font-mono text-amber-300">-{formatVND(withdrawal.amount, isAmountsHidden)}</span>
                           </div>
                         ))}
@@ -450,7 +450,8 @@ export const SafetyInvestmentPortfolio: React.FC<SafetyInvestmentPortfolioProps>
                     value={principalAmount}
                     onValueChange={setPrincipalAmount}
                     min={0}
-                    placeholder="10.000.000"
+                    hideAmount={isAmountsHidden}
+                    placeholder={isAmountsHidden ? '••••••••' : '10.000.000'}
                     className="form-input font-mono"
                   />
                 </FormField>
@@ -520,7 +521,8 @@ export const SafetyInvestmentPortfolio: React.FC<SafetyInvestmentPortfolioProps>
                           annualInterestRate,
                           startDate,
                           maturityDate,
-                        }).maturityValue
+                        }).maturityValue,
+                        isAmountsHidden,
                       )}
                     </strong>
                   </div>
@@ -608,6 +610,7 @@ export const SafetyInvestmentPortfolio: React.FC<SafetyInvestmentPortfolioProps>
                   value={withdrawalAmount}
                   onValueChange={setWithdrawalAmount}
                   min={0}
+                  hideAmount={isAmountsHidden}
                   placeholder="0"
                   className="form-input font-mono text-lg font-black"
                 />

@@ -16,6 +16,7 @@ interface CurrencyInputProps {
   id?: string;
   name?: string;
   disabled?: boolean;
+  hideAmount?: boolean;
 }
 
 const formatCurrency = (value: number | '') =>
@@ -87,6 +88,7 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
   id,
   name,
   disabled,
+  hideAmount = false,
 }) => {
   const preferences = getRuntimePreferences();
   const [displayValue, setDisplayValue] = useState(() => formatCurrency(value));
@@ -105,7 +107,7 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
     <input
       id={id}
       name={name}
-      type="text"
+      type={hideAmount ? 'password' : 'text'}
       inputMode="numeric"
       autoComplete="off"
       value={displayValue}

@@ -454,6 +454,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                       value={fixedGiveAmount}
                       onValueChange={setFixedGiveAmount}
                       min={0}
+                      hideAmount={isAmountsHidden}
                       placeholder="Số tiền cố định"
                       className="w-full px-3 py-2 bg-[#121214] border border-zinc-700 rounded-lg text-white text-xs font-mono focus:outline-none focus:border-emerald-500"
                     />
@@ -669,9 +670,10 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                         Tổng nợ phải thanh toán, đã gồm lãi và phí ({getDisplayCurrencyCode()})
                       </label>
                       <CurrencyInput
-                        placeholder="VD: 65.000.000"
+                        placeholder={isAmountsHidden ? '••••••••' : 'VD: 65.000.000'}
                         value={totalAmount}
                         onValueChange={setTotalAmount}
+                        hideAmount={isAmountsHidden}
                         required
                         min={1}
                         className="w-full px-3.5 py-2.5 bg-[#1c1c20] border border-zinc-700 rounded-xl text-white font-mono focus:outline-none focus:border-rose-500"
@@ -683,9 +685,10 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                         Phần phí chuyển đổi nằm trong tổng nợ ({getDisplayCurrencyCode()})
                       </label>
                       <CurrencyInput
-                        placeholder="VD: 500.000"
+                        placeholder={isAmountsHidden ? '••••••••' : 'VD: 500.000'}
                         value={conversionFee}
                         onValueChange={setConversionFee}
+                        hideAmount={isAmountsHidden}
                         min={0}
                         className="w-full px-3.5 py-2.5 bg-[#1c1c20] border border-zinc-700 rounded-xl text-white font-mono focus:outline-none focus:border-rose-500"
                       />
@@ -696,9 +699,10 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                     <div className="space-y-1">
                       <label className="font-bold text-zinc-300">Số tiền chuyển đổi trả góp ({getDisplayCurrencyCode()})</label>
                       <CurrencyInput
-                        placeholder="VD: 60.000.000"
+                        placeholder={isAmountsHidden ? '••••••••' : 'VD: 60.000.000'}
                         value={principalAmount}
                         onValueChange={setPrincipalAmount}
+                        hideAmount={isAmountsHidden}
                         required
                         min={1}
                         className="w-full px-3.5 py-2.5 bg-[#1c1c20] border border-zinc-700 rounded-xl text-white font-mono focus:outline-none focus:border-indigo-500"
@@ -792,24 +796,24 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                 </div>
                 <div className="text-zinc-400">
                   Tổng nợ phải thanh toán:{' '}
-                  <span className="font-mono text-white text-sm font-black">{formatVND(computedTotalDebt)}</span>
+                  <span className="font-mono text-white text-sm font-black">{formatVND(computedTotalDebt, isAmountsHidden)}</span>
                 </div>
                 <div className="text-rose-300 font-bold sm:text-right">
                   {conversionFeeMode === 'distributed' ? 'Trả mỗi tháng (đã gồm phí):' : 'Trả định kỳ mỗi tháng:'}{' '}
-                  <span className="font-mono text-white text-sm font-black">{formatVND(actualMonthlyPayment)}</span>
+                  <span className="font-mono text-white text-sm font-black">{formatVND(actualMonthlyPayment, isAmountsHidden)}</span>
                 </div>
               </div>
 
               {calculationMode === 'calculated' && computedTotalDebt > 0 && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                   <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-zinc-300">
-                    Tiền chuyển đổi: <strong className="text-white">{formatVND(principal)}</strong>
+                    Tiền chuyển đổi: <strong className="text-white">{formatVND(principal, isAmountsHidden)}</strong>
                   </div>
                   <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-zinc-300">
-                    Tổng tiền lãi: <strong className="text-white">{formatVND(calculatedInterest)}</strong>
+                    Tổng tiền lãi: <strong className="text-white">{formatVND(calculatedInterest, isAmountsHidden)}</strong>
                   </div>
                   <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-zinc-300">
-                    Phí chuyển đổi: <strong className="text-white">{formatVND(calculatedFee)}</strong>
+                    Phí chuyển đổi: <strong className="text-white">{formatVND(calculatedFee, isAmountsHidden)}</strong>
                   </div>
                 </div>
               )}
@@ -817,15 +821,15 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
               {feeAmount > 0 && (
                 <div className="bg-amber-500/10 p-3 rounded-xl border border-amber-500/30 text-xs text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                   <span>
-                    Phí chuyển đổi: <strong>{formatVND(feeAmount)}</strong> —{' '}
+                    Phí chuyển đổi: <strong>{formatVND(feeAmount, isAmountsHidden)}</strong> —{' '}
                     {conversionFeeMode === 'upfront'
                       ? 'ngân hàng thu một lần trong tháng bắt đầu'
-                      : `chia đều ${formatVND(distributedFeePerMonth)}/tháng`}
+                      : `chia đều ${formatVND(distributedFeePerMonth, isAmountsHidden)}/tháng`}
                   </span>
                   <span className="font-bold">
                     {conversionFeeMode === 'upfront'
-                      ? `Tháng đầu: ${formatVND(firstMonthPayment)}`
-                      : `Tổng phải trả: ${formatVND(computedTotalDebt)}`}
+                      ? `Tháng đầu: ${formatVND(firstMonthPayment, isAmountsHidden)}`
+                      : `Tổng phải trả: ${formatVND(computedTotalDebt, isAmountsHidden)}`}
                   </span>
                 </div>
               )}
@@ -894,7 +898,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                               isPaid ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'
                             }`}
                           />
-                          <h4 className="font-bold text-sm text-white">{debt.name}</h4>
+                          <h4 data-no-translate="true" className="font-bold text-sm text-white">{debt.name}</h4>
                           <span
                             className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
                               isPaid
@@ -913,7 +917,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                               {formatDateVI(debt.startMonth)} đến {formatDateVI(debt.endMonth)} ({months} tháng)
                             </span>
                           </span>
-                          {debt.notes && <span>• {debt.notes}</span>}
+                          {debt.notes && <span data-no-translate="true">• {debt.notes}</span>}
                         </div>
                       </div>
 

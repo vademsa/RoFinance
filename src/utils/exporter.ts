@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { Jar, Transaction } from '../types';
 import { formatVND, formatDateVI } from './formatters';
 import { convertVndForDisplay, getRuntimePreferences } from '../lib/preferences';
+import type { AnalyticsCycle } from './analytics';
 
 const escapeHtml = (value: unknown) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -10,59 +11,143 @@ const escapeHtml = (value: unknown) => String(value ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
-export function exportToExcel(
+export function buildExportReportData(
+  jars: Jar[],
+  transactions: Transaction[],
+  monthlyIncome: number,
+  jarRegistry: Jar[],
+  cycle?: AnalyticsCycle,
+) {
+  const reportTransactions = cycle?.transactions ?? transactions;
+  const activeJarIds = new Set(jars.map((jar) => jar.id));
+  const archivedCycleSpent = reportTransactions
+    .filter((transaction) => transaction.type === 'expense' && !activeJarIds.has(transaction.jarId))
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const reportJars = cycle
+    ? cycle.jars.map((row) => {
+        const details = jarRegistry.find((jar) => jar.id === row.jarId);
+        return {
+          code: row.code,
+          name: row.name,
+          bankName: details?.bankName || '',
+          accountNumber: details?.accountNumber || '',
+          accountName: details?.accountName || '',
+          percentage: row.allocation !== null && cycle.income > 0
+            ? Number(((row.allocation / cycle.income) * 100).toFixed(2))
+            : null,
+          targetBudget: row.budget,
+          currentSpent: row.spent,
+          remaining: row.remaining,
+          archivedSpendOnly: false,
+        };
+      })
+    : jars.map((jar) => ({
+        code: jar.code,
+        name: jar.name,
+        bankName: jar.bankName,
+        accountNumber: jar.accountNumber,
+        accountName: jar.accountName,
+        percentage: jar.percentage as number | null,
+        targetBudget: jar.targetBudget as number | null,
+        currentSpent: jar.currentSpent,
+        remaining: jar.targetBudget - jar.currentSpent as number | null,
+        archivedSpendOnly: false,
+      }));
+  let archivedCurrentCycleSpent = 0;
+  if (cycle) {
+    const includedJarIds = new Set(cycle.jars.map((row) => row.jarId));
+    const missingExpenseByJar = new Map<string, number>();
+    reportTransactions.filter((transaction) => transaction.type === 'expense').forEach((transaction) => {
+      if (includedJarIds.has(transaction.jarId)) return;
+      missingExpenseByJar.set(
+        transaction.jarId,
+        (missingExpenseByJar.get(transaction.jarId) || 0) + transaction.amount,
+      );
+    });
+    missingExpenseByJar.forEach((spent, jarId) => {
+      const details = jarRegistry.find((jar) => jar.id === jarId);
+      if (cycle.isCurrent) archivedCurrentCycleSpent += spent;
+      reportJars.push({
+        code: details?.code || '—',
+        name: details?.name || jarId,
+        bankName: details?.bankName || '',
+        accountNumber: details?.accountNumber || '',
+        accountName: details?.accountName || '',
+        percentage: null,
+        targetBudget: cycle.isCurrent ? spent : null,
+        currentSpent: spent,
+        remaining: cycle.isCurrent ? 0 : null,
+        archivedSpendOnly: cycle.isCurrent,
+      });
+    });
+  }
+  const detailedExpense = reportTransactions
+    .filter((transaction) => transaction.type === 'expense')
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  return {
+    reportTransactions,
+    reportJars,
+    income: cycle?.income ?? monthlyIncome,
+    totalSpent: cycle?.expense ?? reportTransactions
+      .filter((transaction) => transaction.type === 'expense')
+      .reduce((sum, transaction) => sum + transaction.amount, 0),
+    totalAllocated: cycle
+      ? cycle.budget === null ? null : cycle.budget + archivedCurrentCycleSpent
+      : jars.reduce((sum, jar) => sum + jar.targetBudget, 0) + archivedCycleSpent,
+    period: cycle ? `${cycle.start} – ${cycle.end}` : null,
+    detailsIncomplete: Boolean(cycle && (
+      cycle.transactionCount > reportTransactions.length || cycle.expense > detailedExpense
+    )),
+  };
+}
+
+export function buildExcelWorkbook(
   jars: Jar[],
   transactions: Transaction[],
   monthlyIncome: number,
   jarRegistry: Jar[] = jars,
+  cycle?: AnalyticsCycle,
 ) {
   const preferences = getRuntimePreferences();
   const currencyLabel = preferences.currency === 'USD' ? 'USD' : '₫';
+  const { reportJars, reportTransactions, income, totalSpent, totalAllocated, period, detailsIncomplete } =
+    buildExportReportData(jars, transactions, monthlyIncome, jarRegistry, cycle);
   // 1. Sheet "Báo cáo Hũ Tài Chính"
-  const activeJarIds = new Set(jars.map((jar) => jar.id));
-  const archivedCycleSpent = transactions
-    .filter((transaction) => transaction.type === 'expense' && !activeJarIds.has(transaction.jarId))
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const totalAllocated = jars.reduce((sum, j) => sum + j.targetBudget, 0) + archivedCycleSpent;
-  const totalSpent = transactions
-    .filter((transaction) => transaction.type === 'expense')
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-
-  const jarsSummaryData = jars.map((jar) => {
-    const remaining = jar.targetBudget - jar.currentSpent;
-    const usagePercent = jar.targetBudget > 0 ? (jar.currentSpent / jar.targetBudget) * 100 : 0;
+  const jarsSummaryData = reportJars.map((jar) => {
+    const usagePercent = jar.targetBudget !== null && jar.targetBudget > 0
+      ? (jar.currentSpent / jar.targetBudget) * 100 : null;
     return {
       'Mã Hũ': jar.code,
       'Tên Hũ Tài Chính': jar.name,
       'Ngân Hàng Liên Kết': jar.bankName,
       'Số Tài Khoản': jar.accountNumber,
       'Chủ Tài Khoản': jar.accountName,
-      'Tỷ Lệ (%)': `${jar.percentage}%`,
-      [`Hạn Mức Ngân Sách (${currencyLabel})`]: convertVndForDisplay(jar.targetBudget),
+      'Tỷ Lệ (%)': jar.percentage === null ? '—' : `${jar.percentage}%`,
+      [`Hạn Mức Ngân Sách (${currencyLabel})`]: jar.targetBudget === null ? '' : convertVndForDisplay(jar.targetBudget),
       [`Thực Tế Đã Chi (${currencyLabel})`]: convertVndForDisplay(jar.currentSpent),
-      [`Số Tiền Còn Lại (${currencyLabel})`]: convertVndForDisplay(remaining),
-      'Tỷ Lệ Đã Chi (%)': `${usagePercent.toFixed(1)}%`,
-      'Trạng Thái': usagePercent > 100 ? 'VƯỢT HẠN MỨC' : usagePercent >= 80 ? 'CẢNH BÁO' : 'An Toàn',
+      [`Số Tiền Còn Lại (${currencyLabel})`]: jar.remaining === null ? '' : convertVndForDisplay(jar.remaining),
+      'Tỷ Lệ Đã Chi (%)': usagePercent === null ? '—' : `${usagePercent.toFixed(1)}%`,
+      'Trạng Thái': jar.archivedSpendOnly ? 'ĐÃ LƯU · DƯ ĐÃ CHUYỂN' : usagePercent === null ? 'CHƯA CÓ HẠN MỨC' : usagePercent > 100 ? 'VƯỢT HẠN MỨC' : usagePercent >= 80 ? 'CẢNH BÁO' : 'An Toàn',
     };
   });
 
   // Add Summary Row
   jarsSummaryData.push({
     'Mã Hũ': 'TỔNG',
-    'Tên Hũ Tài Chính': `Tổng Thu Nhập: ${formatVND(monthlyIncome)}`,
+    'Tên Hũ Tài Chính': `Tổng cộng${period ? ` · ${period}` : ''}`,
     'Ngân Hàng Liên Kết': '-',
     'Số Tài Khoản': '-',
     'Chủ Tài Khoản': '-',
     'Tỷ Lệ (%)': '100%',
-    [`Hạn Mức Ngân Sách (${currencyLabel})`]: convertVndForDisplay(totalAllocated),
+    [`Hạn Mức Ngân Sách (${currencyLabel})`]: totalAllocated === null ? '' : convertVndForDisplay(totalAllocated),
     [`Thực Tế Đã Chi (${currencyLabel})`]: convertVndForDisplay(totalSpent),
-    [`Số Tiền Còn Lại (${currencyLabel})`]: convertVndForDisplay(totalAllocated - totalSpent),
-    'Tỷ Lệ Đã Chi (%)': `${((totalSpent / totalAllocated) * 100).toFixed(1)}%`,
-    'Trạng Thái': totalSpent > totalAllocated ? 'VƯỢT HẠN MỨC TỔNG' : 'Trong Ngân Sách',
+    [`Số Tiền Còn Lại (${currencyLabel})`]: totalAllocated === null ? '' : convertVndForDisplay(totalAllocated - totalSpent),
+    'Tỷ Lệ Đã Chi (%)': totalAllocated === null || totalAllocated <= 0 ? '—' : `${((totalSpent / totalAllocated) * 100).toFixed(1)}%`,
+    'Trạng Thái': totalAllocated === null ? 'CHƯA CÓ HẠN MỨC' : totalSpent > totalAllocated ? 'VƯỢT HẠN MỨC TỔNG' : 'Trong Ngân Sách',
   });
 
   // 2. Sheet "Lịch Sử Giao Dịch"
-  const transactionsData = transactions.map((tx) => {
+  const transactionsData = reportTransactions.map((tx) => {
     const jar = jarRegistry.find((j) => j.id === tx.jarId);
     return {
       'Mã Giao Dịch': tx.id,
@@ -77,16 +162,34 @@ export function exportToExcel(
   });
 
   const wb = XLSX.utils.book_new();
+  const wsOverview = XLSX.utils.json_to_sheet([
+    { 'Thông tin': 'Chu kỳ báo cáo', 'Giá trị': period || 'Chu kỳ hiện tại' },
+    { 'Thông tin': 'Tổng thu', 'Giá trị': convertVndForDisplay(income) },
+    { 'Thông tin': 'Tổng chi', 'Giá trị': convertVndForDisplay(totalSpent) },
+    {
+      'Thông tin': 'Chi tiết giao dịch',
+      'Giá trị': detailsIncomplete
+        ? 'Không đầy đủ: tổng chi lịch sử có thể cao hơn các giao dịch còn lưu.'
+        : 'Đầy đủ theo dữ liệu hiện có.',
+    },
+  ]);
   const wsJars = XLSX.utils.json_to_sheet(jarsSummaryData);
   const wsTx = XLSX.utils.json_to_sheet(transactionsData);
-  const vndNumberFormat =
+  const currencyNumberFormat =
     preferences.currency === 'USD' ? '$#,##0.00' : '#,##0 [$₫-vi-VN]';
+  for (const address of ['B3', 'B4']) {
+    const cell = wsOverview[address];
+    if (cell && typeof cell.v === 'number') {
+      cell.t = 'n';
+      cell.z = currencyNumberFormat;
+    }
+  }
   ['G', 'H', 'I'].forEach((column) => {
     for (let row = 2; row <= jarsSummaryData.length + 1; row += 1) {
       const cell = wsJars[`${column}${row}`];
       if (cell && typeof cell.v === 'number') {
         cell.t = 'n';
-        cell.z = vndNumberFormat;
+        cell.z = currencyNumberFormat;
       }
     }
   });
@@ -94,11 +197,12 @@ export function exportToExcel(
     const cell = wsTx[`F${row}`];
     if (cell && typeof cell.v === 'number') {
       cell.t = 'n';
-      cell.z = vndNumberFormat;
+      cell.z = currencyNumberFormat;
     }
   }
 
   // Set column widths
+  wsOverview['!cols'] = [{ wch: 25 }, { wch: 82 }];
   wsJars['!cols'] = [
     { wch: 10 },
     { wch: 22 },
@@ -124,11 +228,23 @@ export function exportToExcel(
     { wch: 35 },
   ];
 
+  XLSX.utils.book_append_sheet(wb, wsOverview, 'Tổng Quan');
   XLSX.utils.book_append_sheet(wb, wsJars, 'Báo Cáo Hũ Tài Chính');
   XLSX.utils.book_append_sheet(wb, wsTx, 'Lịch Sử Giao Dịch');
 
+  return wb;
+}
+
+export function exportToExcel(
+  jars: Jar[],
+  transactions: Transaction[],
+  monthlyIncome: number,
+  jarRegistry: Jar[] = jars,
+  cycle?: AnalyticsCycle,
+) {
+  const wb = buildExcelWorkbook(jars, transactions, monthlyIncome, jarRegistry, cycle);
   const now = new Date();
-  const dateStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
+  const dateStr = cycle ? `${cycle.start}_${cycle.end}` : `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
   XLSX.writeFile(wb, `Bao_Cao_Tai_Chinh_RoFinance_${dateStr}.xlsx`);
 }
 
@@ -137,18 +253,12 @@ export function exportToPDFPrint(
   transactions: Transaction[],
   monthlyIncome: number,
   jarRegistry: Jar[] = jars,
+  cycle?: AnalyticsCycle,
 ) {
   const printWindow = window.open('', '_blank', 'width=900,height=800');
   if (!printWindow) return;
-
-  const totalSpent = transactions
-    .filter((transaction) => transaction.type === 'expense')
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const activeJarIds = new Set(jars.map((jar) => jar.id));
-  const archivedCycleSpent = transactions
-    .filter((transaction) => transaction.type === 'expense' && !activeJarIds.has(transaction.jarId))
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const totalAllocated = jars.reduce((sum, j) => sum + j.targetBudget, 0) + archivedCycleSpent;
+  const { reportJars, reportTransactions, income, totalSpent, totalAllocated, period, detailsIncomplete } =
+    buildExportReportData(jars, transactions, monthlyIncome, jarRegistry, cycle);
   const nowStr = new Date().toLocaleDateString('vi-VN');
 
   const htmlContent = `
@@ -194,27 +304,28 @@ export function exportToPDFPrint(
 
       <div class="header">
         <h1>BÁO CÁO QUẢN LÝ TÀI CHÍNH CÁ NHÂN</h1>
-        <p>Mô hình Hũ Tài Chính & Phân Bổ Ngân Sách | Ngày xuất: ${nowStr}</p>
+        <p>Mô hình Hũ Tài Chính & Phân Bổ Ngân Sách | ${period ? `Chu kỳ: ${escapeHtml(period)} | ` : ''}Ngày xuất: ${nowStr}</p>
       </div>
+      ${detailsIncomplete ? '<p style="padding:10px 12px;border:1px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:8px">Chi tiết giao dịch của chu kỳ này không đầy đủ; tổng chi lịch sử có thể cao hơn các giao dịch còn lưu.</p>' : ''}
 
       <div class="grid-summary">
         <div class="card">
-          <div class="title">Tổng Thu Nhập Tháng</div>
-          <div class="value">${formatVND(monthlyIncome)}</div>
+          <div class="title">Tổng Thu Nhập Chu Kỳ</div>
+          <div class="value">${formatVND(income)}</div>
         </div>
         <div class="card">
           <div class="title">Đã Phân Bổ Ngân Sách</div>
-          <div class="value">${formatVND(totalAllocated)}</div>
+          <div class="value">${totalAllocated === null ? '—' : formatVND(totalAllocated)}</div>
         </div>
         <div class="card">
           <div class="title">Thực Tế Đã Chi Tiêu</div>
-          <div class="value" style="color: ${totalSpent > totalAllocated ? '#dc2626' : '#16a34a'}">
+          <div class="value" style="color: ${totalAllocated !== null && totalSpent > totalAllocated ? '#dc2626' : '#16a34a'}">
             ${formatVND(totalSpent)}
           </div>
         </div>
         <div class="card">
           <div class="title">Thặng Dư Còn Lại</div>
-          <div class="value">${formatVND(totalAllocated - totalSpent)}</div>
+          <div class="value">${totalAllocated === null ? '—' : formatVND(totalAllocated - totalSpent)}</div>
         </div>
       </div>
 
@@ -234,22 +345,21 @@ export function exportToPDFPrint(
           </tr>
         </thead>
         <tbody>
-          ${jars
+          ${reportJars
             .map((j) => {
-              const remaining = j.targetBudget - j.currentSpent;
-              const ratio = j.targetBudget > 0 ? (j.currentSpent / j.targetBudget) * 100 : 0;
-              const badgeClass = ratio > 100 ? 'badge-danger' : ratio >= 80 ? 'badge-warning' : 'badge-safe';
-              const statusText = ratio > 100 ? 'Vượt Hạn Mức' : ratio >= 80 ? 'Cảnh Báo' : 'An Toàn';
+              const ratio = j.targetBudget !== null && j.targetBudget > 0 ? (j.currentSpent / j.targetBudget) * 100 : null;
+              const badgeClass = j.archivedSpendOnly ? 'badge-safe' : ratio !== null && ratio > 100 ? 'badge-danger' : ratio !== null && ratio >= 80 ? 'badge-warning' : 'badge-safe';
+              const statusText = j.archivedSpendOnly ? 'Đã lưu · dư đã chuyển' : ratio === null ? 'Chưa có hạn mức' : ratio > 100 ? 'Vượt Hạn Mức' : ratio >= 80 ? 'Cảnh Báo' : 'An Toàn';
               return `
               <tr>
                 <td><strong>${escapeHtml(j.code)}</strong></td>
                 <td>${escapeHtml(j.name)}</td>
                 <td>${escapeHtml(j.bankName)}</td>
                 <td>${escapeHtml(j.accountNumber)}</td>
-                <td class="text-right">${j.percentage}%</td>
-                <td class="text-right">${formatVND(j.targetBudget)}</td>
+                <td class="text-right">${j.percentage === null ? '—' : `${j.percentage}%`}</td>
+                <td class="text-right">${j.targetBudget === null ? '—' : formatVND(j.targetBudget)}</td>
                 <td class="text-right">${formatVND(j.currentSpent)}</td>
-                <td class="text-right">${formatVND(remaining)}</td>
+                <td class="text-right">${j.remaining === null ? '—' : formatVND(j.remaining)}</td>
                 <td class="text-center"><span class="badge ${badgeClass}">${statusText}</span></td>
               </tr>
             `;
@@ -258,7 +368,7 @@ export function exportToPDFPrint(
         </tbody>
       </table>
 
-      <h2>2. Lịch Sử Giao Dịch Gần Đây</h2>
+      <h2>2. Giao Dịch Trong Chu Kỳ</h2>
       <table>
         <thead>
           <tr>
@@ -272,8 +382,7 @@ export function exportToPDFPrint(
           </tr>
         </thead>
         <tbody>
-          ${transactions
-            .slice(0, 15)
+          ${reportTransactions
             .map((tx) => {
               const jar = jarRegistry.find((j) => j.id === tx.jarId);
               return `

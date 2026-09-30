@@ -21,17 +21,19 @@ import {
   toLocalDateKey,
 } from '../utils/monthlyCycle';
 import { groupTransactionsByDate } from '../utils/transactionHistory';
+import { getRuntimePreferences } from '../lib/preferences';
 
 const formatTransactionGroupDate = (dateKey: string) => {
   const date = parseLocalDate(dateKey);
   if (!date) return dateKey;
   const current = new Date();
   const yesterday = new Date(current.getFullYear(), current.getMonth(), current.getDate() - 1);
+  const isEnglish = getRuntimePreferences().language === 'en';
   const prefix = dateKey === toLocalDateKey(current)
-    ? 'Hôm nay'
+    ? isEnglish ? 'Today' : 'Hôm nay'
     : dateKey === toLocalDateKey(yesterday)
-      ? 'Hôm qua'
-      : new Intl.DateTimeFormat('vi-VN', { weekday: 'long' }).format(date);
+      ? isEnglish ? 'Yesterday' : 'Hôm qua'
+      : new Intl.DateTimeFormat(isEnglish ? 'en-US' : 'vi-VN', { weekday: 'long' }).format(date);
   return `${prefix} · ${formatDateVI(dateKey)}`;
 };
 
@@ -42,6 +44,7 @@ interface TransactionListProps {
   onDeleteTransaction: (id: string) => void;
   onEditTransaction: (transaction: Transaction) => void;
   onOpenTransactionModal: () => void;
+  onOpenBankAccountsModal?: () => void;
   isAmountsHidden?: boolean;
   bankAccounts: BankAccount[];
   onUpdateBankBalance: (accountId: string, balance: number) => Promise<void>;
@@ -57,6 +60,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   onDeleteTransaction,
   onEditTransaction,
   onOpenTransactionModal,
+  onOpenBankAccountsModal,
   isAmountsHidden = false,
   bankAccounts,
   onUpdateBankBalance,
@@ -74,6 +78,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   const [balanceMessage, setBalanceMessage] = useState('');
   const uniqueAccounts = deduplicateBankAccounts(bankAccounts);
   const activeJars = jars.filter((jar) => activeJarIds.includes(jar.id));
+  const isEnglish = getRuntimePreferences().language === 'en';
 
   const saveBalance = async (account: BankAccount) => {
     const value = balanceInputs[account.id] ?? account.balance;
@@ -137,26 +142,34 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   const currentCycleEndInclusive = new Date(currentCycleEnd);
   currentCycleEndInclusive.setDate(currentCycleEndInclusive.getDate() - 1);
   const selectedPeriodLabel = selectedCycleId === 'ALL'
-    ? 'Toàn bộ lịch sử'
+    ? isEnglish ? 'All history' : 'Toàn bộ lịch sử'
     : selectedCycleId === 'CURRENT_CYCLE'
-      ? `Chu kỳ ${formatDateVI(toLocalDateKey(currentCycleStart))} – ${formatDateVI(toLocalDateKey(currentCycleEndInclusive))}`
+      ? `${isEnglish ? 'Cycle' : 'Chu kỳ'} ${formatDateVI(toLocalDateKey(currentCycleStart))} – ${formatDateVI(toLocalDateKey(currentCycleEndInclusive))}`
       : selectedSummary
-        ? `Chu kỳ ${formatDateVI(selectedSummary.cycleStart)} – ${formatDateVI(selectedSummary.cycleEnd)}`
-        : 'Chu kỳ đã chọn';
+        ? `${isEnglish ? 'Cycle' : 'Chu kỳ'} ${formatDateVI(selectedSummary.cycleStart)} – ${formatDateVI(selectedSummary.cycleEnd)}`
+        : isEnglish ? 'Selected cycle' : 'Chu kỳ đã chọn';
 
   return (
     <div className="bg-[#121214] rounded-[28px] border border-zinc-800 shadow-xl p-6 space-y-6 text-zinc-100">
       <section className="space-y-2" aria-labelledby="current-account-balances-title">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <div className="flex items-center gap-2">
-            <WalletCards className="h-4 w-4 text-indigo-400" aria-hidden="true" />
-            <h2 id="current-account-balances-title" className="text-sm font-black text-white">
-              Số Dư Tài Khoản Hiện Tại
-            </h2>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <WalletCards className="h-4 w-4 text-indigo-400" aria-hidden="true" />
+              <h2 id="current-account-balances-title" className="text-sm font-black text-white">
+                Số Dư Tài Khoản Hiện Tại
+              </h2>
+            </div>
+            <p className="mt-1 text-[10px] text-zinc-500">Tổng tiền khả dụng từ các hũ cùng liên kết.</p>
           </div>
-          <p className="text-[10px] text-zinc-500">
-            Tổng tiền khả dụng từ các hũ cùng liên kết.
-          </p>
+          {onOpenBankAccountsModal && <button
+            type="button"
+            onClick={onOpenBankAccountsModal}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-700 bg-[#1c1c20] px-2.5 py-1.5 text-[11px] font-semibold text-zinc-200 transition-colors hover:border-indigo-500/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            <Landmark className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{isEnglish ? 'Manage accounts' : 'Quản lý tài khoản'}</span>
+          </button>}
         </div>
         {balanceMessage && <div role="status" className="rounded-lg border border-zinc-800 bg-[#18181b] px-2.5 py-1.5 text-[10px] text-zinc-300">{balanceMessage}</div>}
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -174,7 +187,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     <Landmark className="h-3.5 w-3.5 shrink-0 text-indigo-400" aria-hidden="true" />
                     <span className="truncate">{account.bankName}</span>
                   </div>
-                  <div className="mt-0.5 truncate font-mono text-[9px] text-zinc-500" title={`${account.accountNumber} · ${account.accountHolder}`}>
+                  <div data-no-translate="true" className="mt-0.5 truncate font-mono text-[9px] text-zinc-500" title={`${account.accountNumber} · ${account.accountHolder}`}>
                     {account.accountNumber} · {account.accountHolder}
                   </div>
                 </div>
@@ -182,12 +195,12 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               </div>
               {isDerivedFromJars ? (
                 <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-zinc-800/80 pt-1.5">
-                  <span className="text-[9px] font-semibold text-zinc-500">Khả dụng · {linkedJars.length} hũ</span>
+                  <span className="text-[9px] font-semibold text-zinc-500">{isEnglish ? 'Available' : 'Khả dụng'} · {linkedJars.length} {isEnglish ? linkedJars.length === 1 ? 'jar' : 'jars' : 'hũ'}</span>
                   <span className="truncate font-mono text-sm font-black text-indigo-300">{formatVND(displayedBalance, isAmountsHidden)}</span>
                 </div>
               ) : (
                 <div className="mt-1.5 flex items-center gap-1.5 border-t border-zinc-800/80 pt-1.5">
-                  <CurrencyInput value={balanceInputs[account.id] ?? account.balance} onValueChange={(value) => setBalanceInputs((current) => ({ ...current, [account.id]: value }))} min={0} aria-label={`Số dư ${account.bankName}`} className="h-8 min-w-0 flex-1 rounded-lg border border-zinc-700 bg-[#121214] px-2 text-right font-mono text-xs font-black text-white" />
+                  <CurrencyInput value={balanceInputs[account.id] ?? account.balance} onValueChange={(value) => setBalanceInputs((current) => ({ ...current, [account.id]: value }))} min={0} hideAmount={isAmountsHidden} aria-label={`Số dư ${account.bankName}`} className="h-8 min-w-0 flex-1 rounded-lg border border-zinc-700 bg-[#121214] px-2 text-right font-mono text-xs font-black text-white" />
                   <button type="button" onClick={() => saveBalance(account)} disabled={savingAccountId === account.id} aria-label={`Lưu số dư ${account.bankName}`} className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-indigo-600 text-white transition-colors hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${savingAccountId === account.id ? 'animate-spin' : ''}`} /></button>
                 </div>
               )}
@@ -222,16 +235,16 @@ export const TransactionList: React.FC<TransactionListProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 bg-[#1c1c20] p-3 rounded-2xl border border-zinc-800">
         <div className="relative">
           <CalendarRange className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <label htmlFor="transaction-cycle-filter" className="sr-only">Chọn chu kỳ giao dịch</label>
+          <label htmlFor="transaction-cycle-filter" className="sr-only">{isEnglish ? 'Select transaction cycle' : 'Chọn chu kỳ giao dịch'}</label>
           <select
             id="transaction-cycle-filter"
             value={selectedCycleId}
             onChange={(event) => setSelectedCycleId(event.target.value)}
             className="w-full py-2 pl-9 pr-3 text-xs font-bold bg-[#121214] border border-zinc-700 rounded-xl text-zinc-200 focus:outline-none focus:border-indigo-500"
           >
-            <optgroup label="Theo chu kỳ tài chính">
+            <optgroup label={isEnglish ? 'By financial cycle' : 'Theo chu kỳ tài chính'}>
               <option value="CURRENT_CYCLE">
-                Chu kỳ hiện tại: {formatDateVI(toLocalDateKey(currentCycleStart))} – {formatDateVI(toLocalDateKey(currentCycleEndInclusive))}
+                {isEnglish ? 'Current cycle:' : 'Chu kỳ hiện tại:'} {formatDateVI(toLocalDateKey(currentCycleStart))} – {formatDateVI(toLocalDateKey(currentCycleEndInclusive))}
               </option>
             {[...monthlySummaries]
               .sort((a, b) => b.cycleStart.localeCompare(a.cycleStart))
@@ -241,7 +254,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 </option>
               ))}
             </optgroup>
-            <option value="ALL">Toàn bộ lịch sử</option>
+            <option value="ALL">{isEnglish ? 'All history' : 'Toàn bộ lịch sử'}</option>
           </select>
         </div>
         {/* Search */}
@@ -341,7 +354,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                               {formatTransactionGroupDate(group.date)}
                             </span>
                             <span className="rounded-full border border-zinc-700 bg-[#18181b] px-2 py-0.5 text-[9px] font-bold text-zinc-400">
-                              {group.transactions.length} giao dịch
+                              {group.transactions.length} {isEnglish ? group.transactions.length === 1 ? 'transaction' : 'transactions' : 'giao dịch'}
                             </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] font-bold">
@@ -395,12 +408,12 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     <tr key={tx.id} aria-describedby={`transaction-date-${group.date}`} className="hover:bg-[#1c1c20] transition-colors">
                       <td className="p-3.5 font-mono text-zinc-400">{formatDateVI(tx.date)}</td>
                       <td className="p-3.5">
-                        <div className="font-bold text-white">{tx.description}</div>
+                        <div data-no-translate="true" className="font-bold text-white">{tx.description}</div>
                         <div className="text-[11px] text-zinc-400 flex items-center space-x-1 mt-0.5">
                           <CategoryIcon name={categoryIcon} className="h-3 w-3 text-zinc-500" />
                           <span data-no-translate={isCustomCategory ? 'true' : undefined}>{tx.category}</span>
                         </div>
-                        {tx.counterpartyName && <div className="mt-1 text-[10px] text-zinc-500">Đối tác: {tx.counterpartyName}</div>}
+                        {tx.counterpartyName && <div className="mt-1 text-[10px] text-zinc-500">Đối tác: <span data-no-translate="true">{tx.counterpartyName}</span></div>}
                       </td>
                       <td className="p-3.5">
                         {isIncome && tx.allocations?.length ? (
@@ -454,7 +467,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                             disabled={!canModify}
                             className="cursor-pointer rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-indigo-500/10 hover:text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-500"
                             title={canModify ? 'Chỉnh sửa giao dịch' : 'Giao dịch này được khóa để bảo toàn dữ liệu chu kỳ'}
-                            aria-label={`Chỉnh sửa giao dịch ${tx.description}`}
+                            aria-label="Chỉnh sửa giao dịch"
                           >
                             <Pencil className="h-4 w-4" />
                           </button>
@@ -468,7 +481,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                               : referencesArchivedJar
                                 ? 'Giao dịch thuộc hũ đã lưu trữ và được khóa để bảo toàn tiền đã chuyển'
                                 : 'Giao dịch lịch sử này không có đủ snapshot để tính lại an toàn'}
-                            aria-label={`Xóa giao dịch ${tx.description}`}
+                            aria-label="Xóa giao dịch"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>

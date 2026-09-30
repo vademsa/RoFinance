@@ -25,6 +25,12 @@ export function formatShortVND(amount: number, hideAmount = false): string {
     }).format(converted);
   }
   if (hideAmount) return '•••• ₫';
+  if (preferences.language === 'en') {
+    return new Intl.NumberFormat('en-US', {
+      notation: 'compact',
+      maximumFractionDigits: 2,
+    }).format(amount) + ' ₫';
+  }
   if (Math.abs(amount) >= 1_000_000_000) {
     return (amount / 1_000_000_000).toFixed(2).replace(/\.00$/, '') + ' tỷ ₫';
   }

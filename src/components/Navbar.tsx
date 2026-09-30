@@ -1,13 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Wallet,
-  PlusCircle,
-  Landmark,
-  Bot,
-  FileSpreadsheet,
-  Printer,
-  Sparkles,
   PieChart,
   Coins,
   Settings2,
@@ -26,15 +19,6 @@ import {
 } from '../utils/monthlyCycle';
 
 interface NavbarProps {
-  monthlyIncome: number;
-  totalSpent: number;
-  totalAllocated: number;
-  onOpenIncomeModal: () => void;
-  onOpenTransactionModal: () => void;
-  onOpenBankAccountsModal: () => void;
-  onOpenAIAdvisor: () => void;
-  onExportExcel: () => void;
-  onExportPDF: () => void;
   activeTab: 'jars' | 'transactions' | 'crypto' | 'analytics';
   setActiveTab: (tab: 'jars' | 'transactions' | 'crypto' | 'analytics') => void;
   onOpenAuthModal?: () => void;
@@ -44,15 +28,6 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
-  monthlyIncome,
-  totalSpent,
-  totalAllocated,
-  onOpenIncomeModal,
-  onOpenTransactionModal,
-  onOpenBankAccountsModal,
-  onOpenAIAdvisor,
-  onExportExcel,
-  onExportPDF,
   activeTab,
   setActiveTab,
   onOpenAuthModal,
@@ -170,70 +145,31 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           </div>
 
-          {/* Action Buttons */}
-          <div className="ml-2 hidden items-center space-x-2 xl:flex">
-            <HeaderAction label="Phân bổ thu nhập" onClick={onOpenIncomeModal} icon={<Wallet className="w-4 h-4" />} tone="emerald" />
-            <HeaderAction label="Thêm giao dịch" onClick={onOpenTransactionModal} icon={<PlusCircle className="w-4 h-4" />} tone="indigo" />
-            <HeaderAction label="Tài khoản ngân hàng" onClick={onOpenBankAccountsModal} icon={<Landmark className="w-4 h-4" />} />
-            <HeaderAction label="Trợ lý AI" onClick={onOpenAIAdvisor} icon={<Sparkles className="w-4 h-4" />} tone="purple" />
+          <div className="ml-auto flex shrink-0 items-center gap-2 md:ml-2">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-zinc-800 bg-[#1c1c20] text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+              aria-label={resolvedTheme === 'light' ? 'Chuyển sang giao diện tối' : 'Chuyển sang giao diện sáng'}
+            >
+              {resolvedTheme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              <HeaderTooltip label={resolvedTheme === 'light' ? 'Giao diện tối' : 'Giao diện sáng'} />
+            </button>
 
-            <div className="relative group">
-              <button aria-label="Xuất báo cáo" className="w-10 h-10 text-zinc-400 hover:text-white hover:bg-[#1c1c20] bg-[#121214] rounded-xl transition-all border border-zinc-800 flex items-center justify-center cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/60">
-                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-              </button>
-              <div className="absolute right-0 mt-2 w-48 bg-[#18181b] rounded-2xl shadow-2xl border border-zinc-800 py-1.5 hidden group-hover:block group-focus-within:block z-50">
-                <div className="px-3 py-1 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
-                  Xuất Báo Cáo
-                </div>
-                <button
-                  onClick={onExportExcel}
-                  className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 flex items-center space-x-2 transition-colors"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-                  <span>File Excel (.xlsx)</span>
-                </button>
-                <button
-                  onClick={onExportPDF}
-                  className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 flex items-center space-x-2 transition-colors"
-                >
-                  <Printer className="w-4 h-4 text-sky-400" />
-                  <span>In / File PDF</span>
-                </button>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-zinc-800 bg-[#1c1c20] text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+              aria-label="Cài đặt hiển thị"
+            >
+              <Settings2 className="w-4 h-4" />
+              <HeaderTooltip label="Cài đặt" />
+            </button>
+
+            {onOpenAuthModal && (
+              <ProfileAction user={user} language={preferences.language} onClick={onOpenAuthModal} />
+            )}
           </div>
-
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="group relative ml-auto flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-zinc-800 bg-[#1c1c20] text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/60 md:ml-2"
-            aria-label={resolvedTheme === 'light' ? 'Chuyển sang giao diện tối' : 'Chuyển sang giao diện sáng'}
-          >
-            {resolvedTheme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            <HeaderTooltip label={resolvedTheme === 'light' ? 'Giao diện tối' : 'Giao diện sáng'} />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsSettingsOpen(true)}
-            className="group relative ml-2 flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-zinc-800 bg-[#1c1c20] text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
-            aria-label="Cài đặt hiển thị"
-          >
-            <Settings2 className="w-4 h-4" />
-            <HeaderTooltip label="Cài đặt" />
-          </button>
-
-          {onOpenAuthModal && (
-            <ProfileAction user={user} onClick={onOpenAuthModal} />
-          )}
-        </div>
-
-        <div className="relative z-10 mt-2 flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-zinc-800 bg-[#121214] p-2 xl:hidden">
-          <HeaderAction label="Phân bổ thu nhập" onClick={onOpenIncomeModal} icon={<Wallet className="w-4 h-4" />} tone="emerald" tooltipPlacement="top" />
-          <HeaderAction label="Thêm giao dịch" onClick={onOpenTransactionModal} icon={<PlusCircle className="w-4 h-4" />} tone="indigo" tooltipPlacement="top" />
-          <HeaderAction label="Trợ lý AI" onClick={onOpenAIAdvisor} icon={<Bot className="w-4 h-4" />} tone="purple" tooltipPlacement="top" />
-          <HeaderAction label="Tài khoản ngân hàng" onClick={onOpenBankAccountsModal} icon={<Landmark className="w-4 h-4" />} tooltipPlacement="top" />
-          <HeaderAction label="Xuất Excel" onClick={onExportExcel} icon={<FileSpreadsheet className="w-4 h-4" />} tooltipPlacement="top" />
         </div>
 
         {/* Mobile Tab bar below navbar */}
@@ -435,39 +371,6 @@ const HeaderTooltip = ({
   </span>
 );
 
-const HeaderAction = ({
-  label,
-  onClick,
-  icon,
-  tone = 'neutral',
-  tooltipPlacement = 'bottom',
-}: {
-  label: string;
-  onClick: () => void;
-  icon: React.ReactNode;
-  tone?: 'neutral' | 'emerald' | 'indigo' | 'amber' | 'purple';
-  tooltipPlacement?: 'top' | 'bottom';
-}) => {
-  const toneClasses = {
-    neutral: 'border-zinc-800 bg-[#1c1c20] text-zinc-400 hover:border-zinc-700 hover:text-white',
-    emerald: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20',
-    indigo: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20',
-    amber: 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20',
-    purple: 'border-purple-500/30 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20',
-  };
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      className={`group relative w-10 h-10 shrink-0 rounded-xl border flex items-center justify-center cursor-pointer transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 ${toneClasses[tone]}`}
-    >
-      {icon}
-      <HeaderTooltip label={label} placement={tooltipPlacement} />
-    </button>
-  );
-};
-
 const getProfileInitials = (displayName?: string) =>
   (displayName || 'RoFinance')
     .trim()
@@ -478,18 +381,23 @@ const getProfileInitials = (displayName?: string) =>
 
 const ProfileAction = ({
   user,
+  language,
   onClick,
 }: {
   user?: AuthUser | null;
+  language: 'vi' | 'en';
   onClick: () => void;
 }) => {
-  const label = user ? `Hồ sơ của ${user.displayName}` : 'Tài khoản';
+  const label = user
+    ? `${language === 'en' ? 'Profile of' : 'Hồ sơ của'} ${user.displayName}`
+    : language === 'en' ? 'Account' : 'Tài khoản';
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="group relative ml-2 flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 transition-colors hover:bg-emerald-500/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 xl:w-auto xl:max-w-40 xl:justify-start xl:gap-2 xl:px-1.5 xl:pr-3"
+      data-no-translate="true"
+      className="group relative flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 transition-colors hover:bg-emerald-500/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 xl:w-auto xl:max-w-40 xl:justify-start xl:gap-2 xl:px-1.5 xl:pr-3"
     >
       <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-emerald-500/15 text-[10px] font-black">
         <span aria-hidden="true">{getProfileInitials(user?.displayName)}</span>
@@ -505,7 +413,7 @@ const ProfileAction = ({
         )}
       </span>
       <span className="hidden min-w-0 truncate text-[11px] font-bold text-zinc-200 xl:block">
-          {user ? <span data-no-translate="true">{user.displayName}</span> : 'Tài khoản'}
+          {user ? <span>{user.displayName}</span> : language === 'en' ? 'Account' : 'Tài khoản'}
       </span>
       <HeaderTooltip label={label} />
     </button>

@@ -35,6 +35,7 @@ interface TransactionModalProps {
   resetDay: number;
   previousCycleSummary?: MonthlyCycleSummary;
   editingTransaction?: Transaction | null;
+  isAmountsHidden?: boolean;
 }
 
 export const TransactionModal: React.FC<TransactionModalProps> = ({
@@ -50,6 +51,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   resetDay,
   previousCycleSummary,
   editingTransaction,
+  isAmountsHidden = false,
 }) => {
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>('expense');
   const [amount, setAmount] = useState<number>(0);
@@ -330,6 +332,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               <CurrencyInput
                 id="transaction-amount"
                 value={amount}
+                hideAmount={isAmountsHidden}
                 onValueChange={(value) => {
                   setAmount(value === '' ? 0 : value);
                   setAmountError('');
@@ -346,7 +349,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
             {amountError && <p role="alert" className="text-[11px] font-semibold text-rose-400">{amountError}</p>}
 
-            {amountSuggestions.length > 0 && (
+            {!isAmountsHidden && amountSuggestions.length > 0 && (
               <div className="pt-1" aria-label="Gợi ý số tiền theo giá trị đang nhập">
                 <div className="mb-1.5 text-[10px] font-semibold text-zinc-500">Gợi ý theo số đang nhập</div>
                 <div className="flex flex-wrap gap-1.5">
@@ -361,7 +364,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                           : 'border-zinc-800 bg-[#1c1c20] text-zinc-300 hover:bg-zinc-800'
                       }`}
                     >
-                      {formatVND(suggestion)}
+                      {formatVND(suggestion, isAmountsHidden)}
                     </button>
                   ))}
                 </div>
@@ -402,7 +405,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     >
                       <span className="block text-xs font-bold text-white">{jar.name}</span>
                       <span className="block mt-1 text-[10px] font-mono text-emerald-400">
-                        {selected ? formatVND(allocation) : 'Không phân bổ'}
+                        {selected ? formatVND(allocation, isAmountsHidden) : 'Không phân bổ'}
                       </span>
                     </button>
                   );
@@ -451,7 +454,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             >
               {expenseJars.map((j) => (
                 <option key={j.id} value={j.id}>
-                  {j.name} ({j.code}) - Hạn mức {formatVND(j.targetBudget)}
+                  {j.name} ({j.code}) - Hạn mức {formatVND(j.targetBudget, isAmountsHidden)}
                 </option>
               ))}
             </select>
@@ -479,7 +482,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     : 'Nhắc nhở: Hũ này đã sử dụng hơn 80% hạn mức tháng'}
                 </div>
                 <div className="mt-0.5 opacity-90 font-mono">
-                  Dự kiến tổng chi: {formatVND(projectedSpent)} / Hạn mức: {formatVND(selectedJar?.targetBudget || 0)} (
+                  Dự kiến tổng chi: {formatVND(projectedSpent, isAmountsHidden)} / Hạn mức: {formatVND(selectedJar?.targetBudget || 0, isAmountsHidden)} (
                   {projectedPercentage.toFixed(1)}%)
                 </div>
               </div>

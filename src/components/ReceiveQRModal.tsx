@@ -5,9 +5,9 @@ import { Jar } from '../types';
 import { CurrencyInput } from './CurrencyInput';
 import { createVietQRPayload } from '../utils/vietqrPayload';
 
-interface ReceiveQRModalProps { jar: Jar | null; onClose: () => void }
+interface ReceiveQRModalProps { jar: Jar | null; onClose: () => void; isAmountsHidden?: boolean }
 
-export const ReceiveQRModal: React.FC<ReceiveQRModalProps> = ({ jar, onClose }) => {
+export const ReceiveQRModal: React.FC<ReceiveQRModalProps> = ({ jar, onClose, isAmountsHidden = false }) => {
   const [amount, setAmount] = useState<number | ''>('');
   const [purpose, setPurpose] = useState('');
   const payload = useMemo(() => jar ? createVietQRPayload({ bankCode: jar.bankCode, accountNumber: jar.accountNumber, accountName: jar.accountName, amount: amount || 0, purpose }) : '', [amount, jar, purpose]);
@@ -31,8 +31,8 @@ export const ReceiveQRModal: React.FC<ReceiveQRModalProps> = ({ jar, onClose }) 
       </header>
       <div className="space-y-4 p-5">
         <div className="mx-auto w-fit rounded-3xl bg-white p-4 shadow-xl"><QRCodeSVG id="receive-vietqr-code" value={payload} size={240} level="M" includeMargin={false} /></div>
-        <div className="rounded-2xl border border-zinc-800 bg-[#121214] p-3 text-center"><div className="text-sm font-black text-white">{jar.accountName || 'Tên được ngân hàng xác minh khi quét'}</div><div className="mt-1 font-mono text-xs text-zinc-400">{jar.accountNumber} · {jar.bankName}</div></div>
-        <label className="block space-y-1.5 text-xs font-bold text-zinc-300"><span>Số tiền tùy chọn</span><CurrencyInput value={amount} onValueChange={setAmount} min={0} className="w-full rounded-xl border border-zinc-700 bg-[#121214] px-3 py-2.5 text-right font-mono font-bold text-white outline-none focus:border-indigo-500" /></label>
+        <div className="rounded-2xl border border-zinc-800 bg-[#121214] p-3 text-center"><div className="text-sm font-black text-white">{jar.accountName ? <span data-no-translate="true">{jar.accountName}</span> : 'Tên được ngân hàng xác minh khi quét'}</div><div className="mt-1 font-mono text-xs text-zinc-400">{jar.accountNumber} · {jar.bankName}</div></div>
+        <label className="block space-y-1.5 text-xs font-bold text-zinc-300"><span>Số tiền tùy chọn</span><CurrencyInput value={amount} onValueChange={setAmount} min={0} hideAmount={isAmountsHidden} className="w-full rounded-xl border border-zinc-700 bg-[#121214] px-3 py-2.5 text-right font-mono font-bold text-white outline-none focus:border-indigo-500" /></label>
         <label className="block space-y-1.5 text-xs font-bold text-zinc-300"><span>Nội dung tùy chọn</span><input value={purpose} onChange={(event) => setPurpose(event.target.value.slice(0, 25))} placeholder={`NAP TIEN HU ${jar.code}`} className="w-full rounded-xl border border-zinc-700 bg-[#121214] px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500" /></label>
         <div className="flex gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs leading-relaxed text-emerald-200"><ShieldCheck className="h-4 w-4 shrink-0" />QR chỉ chứa thông tin nhận tiền. RoFinance không kết nối ngân hàng và không tự ghi giao dịch.</div>
         <button type="button" onClick={downloadQR} className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-zinc-700 px-4 py-2.5 text-xs font-black text-zinc-200 hover:bg-zinc-800"><Download className="h-4 w-4" />Tải QR dạng SVG</button>

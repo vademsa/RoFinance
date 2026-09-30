@@ -13,6 +13,7 @@ interface IncomeAllocatorModalProps {
   currentIncome: number;
   onApplyAllocation: (newIncome: number, updatedJars: Jar[]) => void;
   onOpenDebtModal?: () => void;
+  isAmountsHidden?: boolean;
 }
 
 export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
@@ -22,6 +23,7 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
   currentIncome,
   onApplyAllocation,
   onOpenDebtModal,
+  isAmountsHidden = false,
 }) => {
   const [incomeInput, setIncomeInput] = useState<number>(currentIncome);
   const [tempJars, setTempJars] = useState<Jar[]>(jars);
@@ -92,7 +94,8 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
               <CurrencyInput
                 value={incomeInput || ''}
                 onValueChange={(value) => setIncomeInput(value === '' ? 0 : value)}
-                placeholder="20.000.000"
+                placeholder={isAmountsHidden ? '••••••••' : '20.000.000'}
+                hideAmount={isAmountsHidden}
                 className="w-full pl-4 pr-16 py-3.5 text-2xl font-black font-mono text-white bg-[#1c1c20] border border-zinc-700 rounded-2xl focus:border-indigo-500 focus:outline-none transition-all"
               />
               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-black text-zinc-400">
@@ -101,7 +104,7 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
             </div>
 
             {/* Quick Amounts */}
-            <div className="flex flex-wrap items-center gap-2 pt-1">
+            {!isAmountsHidden && <div className="flex flex-wrap items-center gap-2 pt-1">
               <span className="text-xs text-zinc-400 font-medium">Gợi ý nhanh:</span>
               {[15000000, 20000000, 30000000, 50000000].map((amt) => (
                 <button
@@ -114,10 +117,10 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
                       : 'bg-[#1c1c20] text-zinc-300 border-zinc-700 hover:bg-zinc-800'
                   }`}
                 >
-                  {formatVND(amt)}
+                  {formatVND(amt, isAmountsHidden)}
                 </button>
               ))}
-            </div>
+            </div>}
           </div>
 
           {/* Allocation Table */}
@@ -202,13 +205,13 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
                           </div>
                         </td>
                         <td className="p-3.5 text-right font-black font-mono text-indigo-300">
-                          {formatVND(allocatedAmount)}
+                          {formatVND(allocatedAmount, isAmountsHidden)}
                         </td>
                         <td className="p-3.5 text-right font-mono">
-                          <div className="font-black text-emerald-300">{formatVND(allocatedAmount + existingAmount)}</div>
+                          <div className="font-black text-emerald-300">{formatVND(allocatedAmount + existingAmount, isAmountsHidden)}</div>
                           {existingAmount > 0 && (
                             <div className="mt-0.5 text-[10px] text-zinc-500">
-                              gồm tiền dư/chuyển {formatVND(existingAmount)}
+                              gồm tiền dư/chuyển {formatVND(existingAmount, isAmountsHidden)}
                             </div>
                           )}
                         </td>

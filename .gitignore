@@ -31,6 +31,7 @@ id_ed25519
 *credentials*.json
 firebase-applet-config.json
 rofinance.zip
+Lesson_1__nam_.xlsx
 
 # Local databases and infrastructure state may contain secrets
 *.db

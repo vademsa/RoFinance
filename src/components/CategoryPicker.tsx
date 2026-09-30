@@ -4,6 +4,8 @@ import type { TransactionCategory } from '../types';
 import type { CategoryIconKey } from '../../shared/category';
 import { CategoryIcon } from './CategoryIcon';
 import { getTransactionCategories } from '../constants/categories';
+import { getRuntimePreferences } from '../lib/preferences';
+import { localizeText } from './TranslationLayer';
 
 const ICON_CHOICES: { key: CategoryIconKey; label: string }[] = [
   { key: 'utensils', label: 'Ăn uống' },
@@ -66,6 +68,7 @@ export function CategoryPicker({
   const searchRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const selected = categories.find((category) => category.name === value) || categories[0];
+  const language = getRuntimePreferences().language;
 
   useEffect(() => {
     if (isOpen && !isAdding) searchRef.current?.focus();
@@ -74,9 +77,13 @@ export function CategoryPicker({
   const filteredCategories = useMemo(() => {
     const query = normalizeForComparison(search);
     return query
-      ? categories.filter((category) => normalizeForComparison(category.name).includes(query))
+      ? categories.filter((category) => (
+          normalizeForComparison(category.name).includes(query)
+          || (language === 'en' && !category.isCustom
+            && normalizeForComparison(localizeText(category.name, 'en')).includes(query))
+        ))
       : categories;
-  }, [categories, search]);
+  }, [categories, language, search]);
 
   const closePicker = () => {
     setIsOpen(false);

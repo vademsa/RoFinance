@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { Jar, Transaction, BankAccount, CryptoAsset, DebtItem, JarPlanSnapshot, MonthlyCycleSummary, SafetyInvestment, TransactionCategory } from './types';
-import { CalendarCheck2, LayoutTemplate, X } from 'lucide-react';
+import { CalendarCheck2, LayoutTemplate, Sparkles, X } from 'lucide-react';
 import {
   DEFAULT_JARS,
   DEFAULT_BANK_ACCOUNTS,
@@ -172,6 +172,21 @@ export default function App() {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isBankAccountsModalOpen, setIsBankAccountsModalOpen] = useState(false);
   const [isAIAdvisorOpen, setIsAIAdvisorOpen] = useState(false);
+  const aiLauncherRef = useRef<HTMLButtonElement>(null);
+  const aiPreviousFocusRef = useRef<HTMLElement | null>(null);
+  const openAIAdvisor = useCallback(() => {
+    aiPreviousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement : null;
+    setIsAIAdvisorOpen(true);
+  }, []);
+  const closeAIAdvisor = useCallback(() => {
+    setIsAIAdvisorOpen(false);
+    window.requestAnimationFrame(() => {
+      const previous = aiPreviousFocusRef.current;
+      if (previous?.isConnected) previous.focus();
+      else aiLauncherRef.current?.focus();
+    });
+  }, []);
   const [isDebtModalOpen, setIsDebtModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isJarPlanModalOpen, setIsJarPlanModalOpen] = useState(false);
@@ -993,24 +1008,6 @@ export default function App() {
     setPreferences(nextPreferences);
   };
 
-  const reportCycleStart = getFinancialCycleStart(new Date(), preferences.monthlyResetDay);
-  const reportCycleEnd = getNextFinancialCycleStart(
-    reportCycleStart,
-    preferences.monthlyResetDay,
-  );
-  const reportTransactions = getCycleTransactions(
-    transactions,
-    reportCycleStart,
-    reportCycleEnd,
-  );
-  const totalSpent = reportTransactions
-    .filter((transaction) => transaction.type === 'expense')
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const activeJarIds = new Set(jars.map((jar) => jar.id));
-  const archivedCycleSpent = reportTransactions
-    .filter((transaction) => transaction.type === 'expense' && !activeJarIds.has(transaction.jarId))
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const totalAllocated = jars.reduce((sum, j) => sum + j.targetBudget, 0) + archivedCycleSpent;
   const jarRegistry = [...jars, ...archivedJars];
 
   return (
@@ -1019,19 +1016,6 @@ export default function App() {
       {dataError && <div className="bg-rose-950 text-rose-200 text-xs text-center p-2">{dataError}</div>}
       {/* Header Bar */}
       <Navbar
-        monthlyIncome={monthlyIncome}
-        totalSpent={totalSpent}
-        totalAllocated={totalAllocated}
-        onOpenIncomeModal={() => setIsIncomeModalOpen(true)}
-        onOpenTransactionModal={() => {
-          setSelectedTransactionJarId(null);
-          setEditingTransaction(null);
-          setIsTransactionModalOpen(true);
-        }}
-        onOpenBankAccountsModal={() => setIsBankAccountsModalOpen(true)}
-        onOpenAIAdvisor={() => setIsAIAdvisorOpen(true)}
-        onExportExcel={() => exportToExcel(jars, reportTransactions, monthlyIncome, jarRegistry)}
-        onExportPDF={() => exportToPDFPrint(jars, reportTransactions, monthlyIncome, jarRegistry)}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
@@ -1041,7 +1025,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="mx-auto w-full max-w-7xl flex-1 px-2 py-3 sm:px-6 sm:py-6 lg:px-8">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-2 pb-20 pt-3 sm:px-6 sm:pb-24 sm:pt-6 lg:px-8">
         {rolloverNotice && (
           <div className="mb-4 flex items-start gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-emerald-50 shadow-lg shadow-emerald-950/10" role="status">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
@@ -1091,7 +1075,7 @@ export default function App() {
         {/* Budget Alerts Banner */}
         <BudgetAlertsBanner
           jars={jars}
-          onOpenAIAdvisor={() => setIsAIAdvisorOpen(true)}
+          onOpenAIAdvisor={openAIAdvisor}
           onOpenTransactionModal={(jarId) => {
             setSelectedTransactionJarId(jarId);
             setEditingTransaction(null);
@@ -1135,6 +1119,7 @@ export default function App() {
               setEditingTransaction(null);
               setIsTransactionModalOpen(true);
             }}
+            onOpenBankAccountsModal={() => setIsBankAccountsModalOpen(true)}
             isAmountsHidden={isAmountsHidden}
             bankAccounts={bankAccounts}
             onUpdateBankBalance={handleSaveBankBalance}
@@ -1169,6 +1154,8 @@ export default function App() {
             isAmountsHidden={isAmountsHidden}
             monthlySummaries={monthlySummaries}
             resetDay={preferences.monthlyResetDay}
+            onExportExcel={(cycle) => exportToExcel(jars, cycle.transactions, cycle.income, jarRegistry, cycle)}
+            onExportPDF={(cycle) => exportToPDFPrint(jars, cycle.transactions, cycle.income, jarRegistry, cycle)}
             onUpdateSummaryIncome={(summaryId, income) => setMonthlySummaries((current) =>
               current.map((summary) => summary.id === summaryId
                 ? { ...summary, income }
@@ -1178,12 +1165,26 @@ export default function App() {
         )}
       </main>
 
+      {!isAIAdvisorOpen && <button
+        ref={aiLauncherRef}
+        type="button"
+        onClick={openAIAdvisor}
+        aria-label={preferences.language === 'en' ? 'Open AI financial assistant' : 'Mở trợ lý tài chính AI'}
+        aria-controls="ai-advisor-popup"
+        aria-expanded={false}
+        className="fixed bottom-4 right-4 z-40 inline-flex h-12 cursor-pointer items-center gap-2 rounded-full border border-indigo-400/40 bg-indigo-600 px-4 text-xs font-black text-white shadow-xl shadow-indigo-950/40 transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b] sm:bottom-6 sm:right-6"
+      >
+        <Sparkles className="h-4 w-4" aria-hidden="true" />
+        <span>{preferences.language === 'en' ? 'AI assistant' : 'Trợ lý AI'}</span>
+      </button>}
+
       {/* Modals & Slide-overs */}
       <IncomeAllocatorModal
         isOpen={isIncomeModalOpen}
         onClose={() => setIsIncomeModalOpen(false)}
         jars={jars}
         currentIncome={monthlyIncome}
+        isAmountsHidden={isAmountsHidden}
         onApplyAllocation={handleApplyAllocation}
         onOpenDebtModal={() => {
           setIsIncomeModalOpen(false);
@@ -1221,6 +1222,7 @@ export default function App() {
 
       <TransactionModal
         isOpen={isTransactionModalOpen}
+        isAmountsHidden={isAmountsHidden}
         onClose={() => {
           setIsTransactionModalOpen(false);
           setEditingTransaction(null);
@@ -1256,10 +1258,11 @@ export default function App() {
 
       <AIAdvisorDrawer
         isOpen={isAIAdvisorOpen}
-        onClose={() => setIsAIAdvisorOpen(false)}
+        onClose={closeAIAdvisor}
         jars={jars}
         monthlyIncome={monthlyIncome}
         transactions={transactions}
+        isAmountsHidden={isAmountsHidden}
       />
 
       <AuthModal

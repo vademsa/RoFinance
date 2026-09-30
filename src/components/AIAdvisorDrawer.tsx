@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { X, Sparkles, Send, Bot, User, Loader2, Lightbulb, ShieldCheck } from 'lucide-react';
@@ -10,6 +10,7 @@ interface AIAdvisorDrawerProps {
   jars: Jar[];
   monthlyIncome: number;
   transactions: Transaction[];
+  isAmountsHidden?: boolean;
 }
 
 interface ChatMessage {
@@ -24,6 +25,7 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
   jars,
   monthlyIncome,
   transactions,
+  isAmountsHidden = false,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -34,6 +36,17 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    closeButtonRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -93,10 +106,13 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
 
   return (
     <aside
+      id="ai-advisor-popup"
+      role="dialog"
+      aria-modal="false"
       aria-labelledby="ai-advisor-title"
-      className="pointer-events-none fixed inset-y-0 right-0 z-50 w-[calc(100%_-_0.75rem)] max-w-[22rem] sm:w-[22rem]"
+      className="fixed bottom-4 right-4 z-40 h-[min(70dvh,42rem)] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[24rem] sm:bottom-6 sm:right-6"
     >
-      <div className="pointer-events-auto flex h-full w-full flex-col border-l border-zinc-800 bg-[#18181b] text-zinc-100 shadow-2xl animate-in slide-in-from-right duration-200">
+      <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-[#18181b] text-zinc-100 shadow-2xl shadow-black/50">
         {/* Header */}
         <div className="bg-[#121214] text-white p-3.5 flex items-center justify-between border-b border-zinc-800">
           <div className="flex min-w-0 items-center space-x-2.5">
@@ -109,6 +125,7 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
             </div>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             aria-label="Đóng trợ lý AI"
@@ -143,7 +160,7 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
         </div>
 
         {/* Chat Messages Log */}
-        <div className="flex-1 p-3 overflow-y-auto space-y-3 bg-[#121214]">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#121214] p-3">
           {messages.map((msg) => {
             const isUser = msg.sender === 'user';
             return (
@@ -163,7 +180,9 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
                       : 'bg-[#1c1c20] text-zinc-100 border border-zinc-800 font-normal rounded-bl-none'
                   }`}
                 >
-                  {isUser ? (
+                  {isAmountsHidden ? (
+                    <span aria-label="Nội dung được ẩn để bảo vệ số tiền">••••••••</span>
+                  ) : isUser ? (
                     <span className="whitespace-pre-wrap">{msg.text}</span>
                   ) : (
                     <ReactMarkdown
@@ -252,11 +271,11 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
             className="flex items-center space-x-2"
           >
             <input
-              type="text"
+              type={isAmountsHidden ? 'password' : 'text'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Hỏi AI về cách quản lý dòng tiền, hũ tài chính..."
-              className="min-w-0 flex-1 p-2.5 text-xs bg-[#1c1c20] border border-zinc-700 rounded-xl focus:outline-none focus:border-indigo-500 text-white placeholder-zinc-500 font-medium"
+              className="min-w-0 flex-1 p-2.5 text-base sm:text-xs bg-[#1c1c20] border border-zinc-700 rounded-xl focus:outline-none focus:border-indigo-500 text-white placeholder-zinc-500 font-medium"
             />
             <button
               type="submit"

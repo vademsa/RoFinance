@@ -607,14 +607,248 @@ const translations: Record<string, string> = {
   'Trích nợ tự động hàng tháng ngày 20 qua VCB': 'Monthly VCB automatic payment on the 20th',
 };
 
+Object.assign(translations, {
+  'Danh Sách': 'List of',
+  'Danh Sách 7 Hũ Tài Chính': 'List of 7 Financial Jars',
+  'Chọn mẫu phù hợp hoặc tự điều chỉnh các hũ theo thu nhập và phong cách sống của bạn.': 'Choose a suitable plan or customize the jars for your income and lifestyle.',
+  'Chọn kiểu phân bổ': 'Choose an allocation plan',
+  'Dư chuyển tiếp': 'Carried-over balance',
+  'Chọn kiểu phân bổ hũ': 'Choose a jar allocation plan',
+  'Hũ còn dùng tiếp sẽ giữ nguyên tiền. Hũ bị loại khỏi mẫu sẽ được lưu trữ và toàn bộ tiền chưa chi được chuyển sang các hũ mới.': 'Jars kept in the new plan retain their money. Removed jars are archived, and their unspent money is transferred to the new jars.',
+  'Cấu hình hiện tại luôn được lưu thành một bản riêng trước khi đổi. Khi quay lại, hệ thống chỉ khôi phục cấu trúc và thông tin hũ, không khôi phục số dư cũ lần thứ hai.': 'Your current setup is saved before switching. Restoring it later brings back the jar structure and details, not the old balances a second time.',
+  'Cấu hình tùy chỉnh hiện tại': 'Current custom setup',
+  'Thiết lập hiện tại': 'Current setup',
+  'Đang sử dụng': 'In use',
+  'Đây là cấu hình thực tế đang áp dụng cho tài khoản của bạn. Hệ thống sẽ lưu lại cấu hình này trước khi bạn chuyển sang mẫu khác.': 'This is the setup currently applied to your account. It will be saved before you switch to another plan.',
+  'Mẫu gợi ý': 'Suggested plans',
+  'Cấu hình đã lưu': 'Saved setups',
+  'Cân bằng – Không nợ': 'Balanced – Debt-free',
+  'Giữ cân bằng giữa sinh hoạt, dự phòng và tích lũy dài hạn.': 'Balance living costs, emergency savings and long-term growth.',
+  'Thu nhập ổn định và không có khoản vay': 'Stable income with no loans',
+  'Tăng trưởng tài sản': 'Asset growth',
+  'Tăng tỷ trọng đầu tư và học tập khi chi phí sinh hoạt đã ổn định.': 'Allocate more to investing and learning once living costs are stable.',
+  'Người muốn ưu tiên tích lũy và đầu tư': 'For people prioritizing saving and investing',
+  'Thu nhập chưa ổn định': 'Variable income',
+  'Ưu tiên chi phí thiết yếu và quỹ dự phòng trước khi tăng đầu tư.': 'Prioritize essentials and an emergency fund before increasing investments.',
+  'Freelancer, kinh doanh hoặc thu nhập biến động': 'Freelancers, business owners or people with variable income',
+  'Ưu tiên trả nợ': 'Debt repayment first',
+  'Dành một phần rõ ràng cho nghĩa vụ nợ nhưng vẫn duy trì dự phòng.': 'Set aside a clear share for debt while maintaining an emergency fund.',
+  'Người đang có khoản vay hoặc trả góp': 'For people with loans or installments',
+  'Sinh viên / Mới đi làm': 'Students / New workers',
+  'Tập trung sinh hoạt, dự phòng ban đầu và phát triển bản thân.': 'Focus on living costs, an initial emergency fund and personal development.',
+  'Người mới bắt đầu quản lý tài chính': 'For people new to managing money',
+  'Tổng tiền khả dụng từ các hũ cùng liên kết.': 'Total available balance across jars linked to the same account.',
+  'Khả dụng': 'Available',
+  'Chu kỳ': 'Cycle',
+  'Chu kỳ đã chọn': 'Selected cycle',
+  'Toàn bộ lịch sử': 'All history',
+  'Số liệu phản ánh các bộ lọc đang được chọn bên trên.': 'Figures reflect the filters selected above.',
+  'Giao dịch': 'Transactions',
+  'giao dịch': 'transactions',
+  'Thu': 'Income',
+  'Chi': 'Expenses',
+  'Chuyển': 'Transfers',
+  'Hôm nay': 'Today',
+  'Hôm qua': 'Yesterday',
+  'đã lưu trữ': 'archived',
+  'Tổng giá trị hiện tại': 'Total current value',
+  'Tổng vốn còn lại': 'Total remaining principal',
+  'Vốn còn lại': 'Remaining principal',
+  'Đã rút': 'Withdrawn',
+  'Đã rút hết': 'Fully withdrawn',
+  'Khoản gửi đã rút hết': 'Deposit fully withdrawn',
+  'Rút tiền': 'Withdraw',
+  'Rút Tiền Khỏi Khoản Gửi': 'Withdraw from Deposit',
+  'Tiền gốc ban đầu': 'Original principal',
+  'Số tiền muốn rút': 'Withdrawal amount',
+  'Rút toàn bộ': 'Withdraw all',
+  'Tối đa': 'Maximum',
+  'Ngày rút': 'Withdrawal date',
+  'Thao tác này cập nhật số vốn và lưu lịch sử rút. Hệ thống không tự cộng vào hũ SAFE vì khoản gửi ban đầu chưa được trừ khỏi số dư hũ.': 'This updates the remaining principal and saves a withdrawal record. It does not automatically add money to the SAFE jar because the original deposit was not deducted from that jar.',
+  'Xác nhận rút tiền': 'Confirm withdrawal',
+  'lần rút trước đó': 'earlier withdrawals',
+  'Hồ sơ cá nhân': 'Personal profile',
+  'PNG, JPEG hoặc WebP · tối đa 5 MB': 'PNG, JPEG or WebP · up to 5 MB',
+  'Chọn ảnh': 'Choose image',
+  'Xóa ảnh': 'Remove image',
+  'Tên hiển thị': 'Display name',
+  'Tên của bạn': 'Your name',
+  'Lưu hồ sơ': 'Save profile',
+  'Chi tiêu chu kỳ cũ sẽ được tổng kết; phần tiền chưa dùng trong mỗi hũ được giữ lại và cộng với phân bổ kỳ mới.': 'The previous cycle is summarized; unspent money in each jar carries over and is added to the new allocation.',
+  'Lần reset tiếp theo:': 'Next reset:',
+  'Tháng không có ngày đã chọn sẽ dùng ngày cuối tháng. Đổi ngày chỉ áp dụng lại ranh giới chu kỳ, không tự chuyển tiền.': 'Months without the selected date use their last day. Changing the day updates cycle boundaries but does not move money.',
+  'Ăn sáng': 'Breakfast',
+  'Ăn trưa': 'Lunch',
+  'Ăn tối': 'Dinner',
+  'Cafe & Đồ uống': 'Coffee & Drinks',
+  'Đi chợ & Siêu thị': 'Groceries & Supermarket',
+  'Tiền thuê nhà': 'Rent',
+  'Tiền điện': 'Electricity',
+  'Tiền nước': 'Water',
+  'Internet & Điện thoại': 'Internet & Phone',
+  'Xăng xe': 'Fuel',
+  'Gửi xe & Cầu đường': 'Parking & Tolls',
+  'Taxi & Xe công nghệ': 'Taxi & Ride-hailing',
+  'Khám bệnh & Thuốc': 'Medical care & Medicine',
+  'Bảo hiểm': 'Insurance',
+  'Con cái & Gia đình': 'Children & Family',
+  'Sửa chữa nhà cửa': 'Home repairs',
+  'Vật dụng gia đình': 'Household items',
+  'Dự phòng mất thu nhập': 'Income-loss reserve',
+  'Hỗ trợ gia đình khẩn cấp': 'Emergency family support',
+  'Thuế & Phí phát sinh': 'Unexpected taxes & fees',
+  'Quỹ đầu tư & Chỉ số': 'Investment & Index Funds',
+  'Vàng': 'Gold',
+  'Bất động sản': 'Real estate',
+  'Đầu tư kinh doanh': 'Business investment',
+  'Tài sản số': 'Digital assets',
+  'Đầu tư khác': 'Other investments',
+  'Nhà hàng & Ăn tiệm': 'Restaurants & Dining out',
+  'Khách sạn': 'Hotels',
+  'Thời trang & Phụ kiện': 'Fashion & Accessories',
+  'Thiết bị điện tử': 'Electronics',
+  'Spa & Chăm sóc cá nhân': 'Spa & Personal care',
+  'Thể thao & Gym': 'Sports & Gym',
+  'Tiệc & Sự kiện': 'Parties & Events',
+  'Sở thích cá nhân': 'Hobbies',
+  'Hưởng thụ khác': 'Other leisure',
+  'Mừng cưới': 'Wedding gifts',
+  'Sinh nhật': 'Birthdays',
+  'Thăm hỏi': 'Visits & Support',
+  'Cho đi khác': 'Other giving',
+  'Học phí': 'Tuition',
+  'Ngoại ngữ': 'Foreign languages',
+  'Thi & Chứng chỉ': 'Exams & Certificates',
+  'Giáo dục khác': 'Other education',
+  'Trả góp': 'Installments',
+  'Khoản nợ khác': 'Other debts',
+  'Thu nhập kinh doanh': 'Business income',
+  'Lãi tiết kiệm & Cho vay': 'Savings & Loan interest',
+  'Hoàn tiền': 'Refunds',
+  'Quà tặng': 'Gifts',
+  'Đồ uống': 'Drinks',
+  'Đi chợ': 'Groceries',
+  'Nhà ở': 'Housing',
+  'Di chuyển': 'Transport',
+  'Sức khỏe': 'Health',
+  'Du lịch': 'Travel',
+  'Học tập': 'Learning',
+  'Cho đi': 'Giving',
+  'Thanh toán': 'Payments',
+  'Tiết kiệm': 'Savings',
+  'Công việc': 'Work',
+  'Cá nhân': 'Personal',
+  'Chọn danh mục': 'Select category',
+  'Tìm danh mục': 'Search categories',
+  'Tìm danh mục...': 'Search categories...',
+  'Chỉnh sửa danh mục': 'Edit category',
+  'Không tìm thấy danh mục phù hợp.': 'No matching categories found.',
+  'Thêm danh mục của riêng bạn': 'Add your own category',
+  'Quản lý danh mục đã tạo': 'Manage custom categories',
+  'Quay lại chọn danh mục': 'Back to category selection',
+  'Danh mục của bạn': 'Your categories',
+  'Chọn bút chì để đổi tên hoặc icon.': 'Select the pencil to change a name or icon.',
+  'Khoản thu': 'Income item',
+  'Khoản chi': 'Expense item',
+  'Việc chỉnh sửa không làm thay đổi tên và icon đã lưu trong các giao dịch cũ.': 'Editing does not change the names or icons already saved in older transactions.',
+  'Danh mục mới': 'New category',
+  'Áp dụng cho các khoản thu': 'Applies to income items',
+  'Áp dụng cho hũ': 'Applies to jar',
+  'Tên danh mục': 'Category name',
+  'Ví dụ: Ăn khuya': 'For example: Late-night meal',
+  'Chọn icon': 'Choose icon',
+  'Lưu thay đổi': 'Save changes',
+  'Tạo và chọn danh mục': 'Create and select category',
+  'Vui lòng nhập tên danh mục.': 'Enter a category name.',
+  'Tên danh mục tối đa 50 ký tự và không chứa ký tự điều khiển.': 'Category names must be at most 50 characters and cannot contain control characters.',
+  'Mỗi tài khoản được tạo tối đa 100 danh mục riêng.': 'Each account can create up to 100 custom categories.',
+  'Danh mục này đã tồn tại trong nhóm hiện tại.': 'This category already exists in this group.',
+  'Quản lý tài sản số và các khoản gửi quỹ an toàn sinh lãi trong cùng một nơi': 'Manage digital assets and interest-bearing safety deposits in one place',
+  'Quỹ An Toàn Sinh Lãi': 'Interest-bearing Safety Fund',
+  'Vốn tài sản số': 'Digital asset capital',
+  'Vốn quỹ an toàn': 'Safety fund capital',
+  'Lãi an toàn dự kiến': 'Expected safety interest',
+  'Lãi / lỗ tài sản số': 'Digital asset profit / loss',
+  'khoản gửi an toàn': 'safety deposits',
+  'Theo dõi tiền gửi tại Tikop, ngân hàng hoặc nền tảng tích lũy an toàn': 'Track deposits at Tikop, banks or other savings platforms',
+  'Thêm Khoản Gửi': 'Add Deposit',
+  'Thêm Khoản Gửi Đầu Tiên': 'Add Your First Deposit',
+  'Lãi dự kiến': 'Expected interest',
+  'Giá trị khi đáo hạn': 'Value at maturity',
+  'Chưa có khoản gửi an toàn': 'No safety deposits yet',
+  'Thêm khoản gửi Tikop hoặc tiền gửi ngân hàng để theo dõi kỳ hạn và lãi dự kiến.': 'Add a Tikop or bank deposit to track its term and expected interest.',
+  'Lãi suất năm': 'Annual interest rate',
+  'Khi đáo hạn': 'At maturity',
+  'Đã đáo hạn': 'Matured',
+  'ngày': 'days',
+  'Chỉnh Sửa Khoản Gửi': 'Edit Deposit',
+  'Thêm Khoản Gửi An Toàn': 'Add Safety Deposit',
+  'Liên kết với hũ Quỹ an toàn (SAFE)': 'Linked to the SAFE jar',
+  'Nơi gửi tiền': 'Deposit provider',
+  'Tên đơn vị / ngân hàng': 'Provider / bank name',
+  'Tên sản phẩm': 'Product name',
+  'Lãi suất (%/năm)': 'Interest rate (%/year)',
+  'Ngày bắt đầu': 'Start date',
+  'Ngày đáo hạn': 'Maturity date',
+  'Ghi chú': 'Notes',
+  'Dự tính khi đáo hạn': 'Estimated at maturity',
+  'Tổng nhận:': 'Total received:',
+  'Lưu Khoản Gửi': 'Save Deposit',
+  'Lưu Thay Đổi': 'Save Changes',
+  'Đóng rút tiền': 'Close withdrawal form',
+  'VD: Rút trước hạn, chuyển về tài khoản chính...': 'E.g. Early withdrawal, transfer to main account...',
+  'VD: Tích lũy linh hoạt': 'E.g. Flexible savings',
+  'Điều kiện rút trước hạn, mã hợp đồng...': 'Early withdrawal terms, contract number...',
+  'Xác nhận áp dụng': 'Confirm applying',
+  'Quay lại': 'Go back',
+  'Xác nhận chuyển': 'Confirm switch',
+  'Áp dụng mẫu': 'Apply plan',
+  'Theo chu kỳ tài chính': 'By financial cycle',
+  'Đã lưu:': 'Saved:',
+  'Đối tác:': 'Counterparty:',
+  'Chỉnh sửa giao dịch': 'Edit transaction',
+  'Tổng khả dụng': 'Total available',
+  'Hũ cũ': 'Previous jar',
+  'kỳ': 'cycle',
+  'Chọn ngân hàng': 'Select a bank',
+  'Đầu tư': 'Investing',
+  'khác': 'other',
+  'Đã cập nhật hồ sơ cá nhân.': 'Profile updated.',
+  'Không thể cập nhật hồ sơ cá nhân.': 'Unable to update profile.',
+  'Phiên đăng nhập đã hết hạn.': 'Your session has expired.',
+  'Không thể xử lý ảnh đại diện.': 'Unable to process the profile image.',
+  'Chỉ hỗ trợ ảnh PNG, JPEG hoặc WebP.': 'Only PNG, JPEG and WebP images are supported.',
+  'Ảnh gốc phải nhỏ hơn 5 MB.': 'The original image must be smaller than 5 MB.',
+  'Không thể đọc nội dung ảnh.': 'Unable to read the image.',
+  'Kích thước ảnh không hợp lệ.': 'Invalid image dimensions.',
+  'Trình duyệt không thể xử lý ảnh này.': 'Your browser cannot process this image.',
+  'Trình duyệt không thể nén ảnh này.': 'Your browser cannot compress this image.',
+  'Không thể đọc ảnh sau khi xử lý.': 'Unable to read the processed image.',
+  'Ảnh sau khi xử lý vẫn lớn hơn 1 MB.': 'The processed image is still larger than 1 MB.',
+  'Đã lưu tài khoản do bạn nhập.': 'Account saved.',
+  'Không thể lưu số dư.': 'Unable to save the balance.',
+  'Số tài khoản': 'Account number',
+  'Nhập 6–19 chữ số': 'Enter 6–19 digits',
+  'Số tài khoản phải gồm 6–19 chữ số.': 'Account numbers must contain 6–19 digits.',
+  'Vui lòng nhập tên chủ tài khoản.': 'Enter the account holder name.',
+  'Không thể ghi nhận khoản rút.': 'Unable to record the withdrawal.',
+  'Hồ sơ của': 'Profile of',
+  'Lưu thủ công:': 'Saved manually:',
+});
+
 const originalText = new WeakMap<Text, string>();
 const originalAttributes = new WeakMap<Element, Map<string, string>>();
 const localizedText = new WeakMap<Text, string>();
+const localizedAttributes = new WeakMap<Element, Map<string, string>>();
 
 const phraseTranslations = Object.entries(translations)
   .sort(([left], [right]) => right.length - left.length);
+const phrasePattern = new RegExp(
+  `(?<![\\p{L}\\p{N}])(${phraseTranslations.map(([vi]) => vi.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?![\\p{L}\\p{N}])`,
+  'gu',
+);
 
-function localizeText(original: string, language: AppLanguage, currency: AppCurrency) {
+export function localizeText(original: string, language: AppLanguage) {
   const leading = original.match(/^\s*/)?.[0] || '';
   const trailing = original.match(/\s*$/)?.[0] || '';
   const source = original.trim().replace(/\s+/g, ' ');
@@ -623,18 +857,12 @@ function localizeText(original: string, language: AppLanguage, currency: AppCurr
   if (language === 'en') {
     result = translations[source] || source;
     if (result === source) {
-      phraseTranslations.forEach(([vi, en]) => {
-        result = result.replaceAll(vi, en);
-      });
+      result = source.replace(phrasePattern, (match) => translations[match]);
     }
-  }
-
-  if (currency === 'USD') {
     result = result
-      .replaceAll('(VNĐ)', '(USD)')
-      .replaceAll('VNĐ', 'USD')
-      .replaceAll('VND', 'USD')
-      .replaceAll('₫', '$');
+      .replace(/\b1 jars\b/g, '1 jar')
+      .replace(/\b1 transactions\b/g, '1 transaction')
+      .replace(/\b1 safety deposits\b/g, '1 safety deposit');
   }
 
   return `${leading}${result}${trailing}`;
@@ -657,7 +885,7 @@ export function TranslationLayer({
           originalText.set(node, node.textContent);
         }
         const original = originalText.get(node) || '';
-        const nextText = localizeText(original, language, currency);
+        const nextText = localizeText(original, language);
         localizedText.set(node, nextText);
         if (node.textContent !== nextText) node.textContent = nextText;
         return;
@@ -666,13 +894,18 @@ export function TranslationLayer({
       if (node.closest('[data-no-translate="true"]')) return;
       const attributes = ['placeholder', 'title', 'aria-label'];
       if (!originalAttributes.has(node)) originalAttributes.set(node, new Map());
+      if (!localizedAttributes.has(node)) localizedAttributes.set(node, new Map());
       const stored = originalAttributes.get(node)!;
+      const lastLocalized = localizedAttributes.get(node)!;
       attributes.forEach((attribute) => {
         const current = node.getAttribute(attribute);
-        if (current && !stored.has(attribute)) stored.set(attribute, current);
+        if (current && (!stored.has(attribute) || (lastLocalized.has(attribute) && current !== lastLocalized.get(attribute)))) {
+          stored.set(attribute, current);
+        }
         const original = stored.get(attribute);
         if (!original) return;
-        const localizedAttribute = localizeText(original, language, currency);
+        const localizedAttribute = localizeText(original, language);
+        lastLocalized.set(attribute, localizedAttribute);
         if (node.getAttribute(attribute) !== localizedAttribute) {
           node.setAttribute(attribute, localizedAttribute);
         }

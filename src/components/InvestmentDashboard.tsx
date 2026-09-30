@@ -70,7 +70,9 @@ export const InvestmentDashboard: React.FC<InvestmentDashboardProps> = ({
   jars,
 }) => {
   const [activeInvestmentType, setActiveInvestmentType] = useState<'crypto' | 'safe'>('crypto');
-  const usdVndRate = getRuntimePreferences().usdVndRate || DEFAULT_USD_VND_RATE;
+  const preferences = getRuntimePreferences();
+  const isEnglish = preferences.language === 'en';
+  const usdVndRate = preferences.usdVndRate || DEFAULT_USD_VND_RATE;
   const overview = calculateInvestmentOverview(cryptoAssets, safetyInvestments, usdVndRate);
   const [cryptoMetrics, setCryptoMetrics] = useState({
     currentValueVND: overview.cryptoCapital,
@@ -148,7 +150,10 @@ export const InvestmentDashboard: React.FC<InvestmentDashboardProps> = ({
                 {formatVND(currentPortfolioValue, isAmountsHidden)}
               </div>
               <div className="mt-3"><div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Lãi / lỗ tài sản số</div><div className={`mt-1 font-mono text-sm font-black ${cryptoMetrics.pnlVND >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{cryptoMetrics.pnlVND >= 0 ? '+' : ''}{formatVND(cryptoMetrics.pnlVND, isAmountsHidden)} <span className="whitespace-nowrap">({cryptoMetrics.pnlVND >= 0 ? '+' : ''}{cryptoMetrics.pnlPercent.toFixed(2)}%)</span></div></div>
-              <p className="mt-2 text-xs text-zinc-400">{cryptoAssets.length} tài sản số · {safetyInvestments.length} khoản gửi an toàn</p>
+              <p className="mt-2 text-xs text-zinc-400">
+                {cryptoAssets.length} {isEnglish ? cryptoAssets.length === 1 ? 'digital asset' : 'digital assets' : 'tài sản số'} ·{' '}
+                {safetyInvestments.length} {isEnglish ? safetyInvestments.length === 1 ? 'safety deposit' : 'safety deposits' : 'khoản gửi an toàn'}
+              </p>
             </div>
           </article>
 

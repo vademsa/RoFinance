@@ -453,9 +453,9 @@ export const JarManagement: React.FC<JarManagementProps> = ({
                   />
                   {['GIVE', 'NEC', 'SAFE'].includes(editingJar.code) && (
                     <p className="mt-1.5 text-[11px] text-zinc-400">
-                      Phân bổ kỳ này: <strong className="text-emerald-400">{formatVND(editingJar.cycleAllocation || 0)}</strong>
+                      Phân bổ kỳ này: <strong className="text-emerald-400">{formatVND(editingJar.cycleAllocation || 0, isAmountsHidden)}</strong>
                       {getCarryoverTotal(editingJar) > 0 && (
-                        <span> · Tổng khả dụng {formatVND(editingJar.targetBudget)}</span>
+                        <span> · Tổng khả dụng {formatVND(editingJar.targetBudget, isAmountsHidden)}</span>
                       )}
                     </p>
                   )}
@@ -467,6 +467,7 @@ export const JarManagement: React.FC<JarManagementProps> = ({
                   </label>
                   <CurrencyInput
                     value={editingJar.cycleAllocation || 0}
+                    hideAmount={isAmountsHidden}
                     onValueChange={(value) => {
                       const cycleAllocation = value === '' ? 0 : Math.max(0, value);
                       const percentage =
@@ -479,14 +480,14 @@ export const JarManagement: React.FC<JarManagementProps> = ({
                       ));
                     }}
                     min={0}
-                    placeholder="VD: 1.000.000"
+                    placeholder={isAmountsHidden ? '••••••••' : 'VD: 1.000.000'}
                     className="w-full p-2.5 bg-[#1c1c20] border border-zinc-700 rounded-xl font-bold font-mono text-sm text-white focus:outline-none focus:border-emerald-500"
                   />
                   <div className="mt-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-[11px] text-zinc-300">
                     Tỷ lệ quy đổi:{' '}
                     <strong className="text-emerald-400">{editingJar.percentage}%</strong>
                     <span className="block text-zinc-500 mt-0.5">
-                      Dựa trên thu nhập tháng {formatVND(monthlyIncome)}
+                      Dựa trên thu nhập tháng {formatVND(monthlyIncome, isAmountsHidden)}
                     </span>
                   </div>
                 </div>
@@ -561,7 +562,7 @@ export const JarManagement: React.FC<JarManagementProps> = ({
           </div>
         </div>
       )}
-      <ReceiveQRModal jar={receivingJar} onClose={() => setReceivingJar(null)} />
+      <ReceiveQRModal jar={receivingJar} isAmountsHidden={isAmountsHidden} onClose={() => setReceivingJar(null)} />
     </div>
   );
 };

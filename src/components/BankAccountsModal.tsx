@@ -105,7 +105,7 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
               <Field label="Ngân hàng"><select value={selectedBankCode} onChange={(event) => setSelectedBankCode(event.target.value)} className={inputClass}><option value="">Chọn ngân hàng</option>{BANK_OPTIONS.map((bank) => <option key={bank.code} value={bank.code}>{bank.shortName}</option>)}</select></Field>
               <Field label="Số tài khoản"><input inputMode="numeric" value={accountNumber} onChange={(event) => setAccountNumber(event.target.value.replace(/\D/g, '').slice(0, 19))} placeholder="Nhập 6–19 chữ số" className={`${inputClass} font-mono`} /></Field>
               <Field label="Tên chủ tài khoản"><input value={accountHolder} maxLength={100} onChange={(event) => setAccountHolder(event.target.value.toUpperCase().slice(0, 100))} placeholder="Nhập đúng tên hiển thị tại ngân hàng" className={inputClass} /></Field>
-              <Field label="Số dư hiện tại"><CurrencyInput value={openingBalance} onValueChange={setOpeningBalance} min={0} className={`${inputClass} text-right font-mono font-bold`} /></Field>
+              <Field label="Số dư hiện tại"><CurrencyInput value={openingBalance} onValueChange={setOpeningBalance} min={0} hideAmount={isAmountsHidden} className={`${inputClass} text-right font-mono font-bold`} /></Field>
               <button type="button" onClick={addAccount} disabled={!canAdd} className="sm:col-span-2 inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"><Save className="h-4 w-4" />Lưu tài khoản</button>
             </div>}
           </section>
@@ -119,7 +119,7 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
                 <article key={account.id} className="grid gap-3 rounded-2xl border border-zinc-800 bg-[#121214] p-4 sm:grid-cols-[1fr_auto] sm:items-center">
                   <div className="min-w-0">
                     <div className="text-sm font-black text-white">{account.bankName}</div>
-                    <div className="mt-1 truncate font-mono text-xs text-zinc-400">{account.accountNumber} · {account.accountHolder}</div>
+                    <div data-no-translate="true" className="mt-1 truncate font-mono text-xs text-zinc-400">{account.accountNumber} · {account.accountHolder}</div>
                     <div className="mt-1 text-[10px] text-zinc-500">
                       {isDerivedFromJars ? `Tự động tổng hợp từ ${linkedJars.length} hũ` : `Lưu thủ công: ${account.lastSynced}`}
                     </div>
@@ -130,7 +130,7 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <CurrencyInput id={`manual-balance-${account.id}`} value={balanceInputs[account.id] ?? account.balance} onValueChange={(value) => setBalanceInputs((current) => ({ ...current, [account.id]: value }))} min={0} className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-[#1c1c20] px-3 py-2 text-right font-mono text-sm font-bold text-white outline-none focus:border-indigo-500 sm:w-44" />
+                      <CurrencyInput id={`manual-balance-${account.id}`} value={balanceInputs[account.id] ?? account.balance} onValueChange={(value) => setBalanceInputs((current) => ({ ...current, [account.id]: value }))} min={0} hideAmount={isAmountsHidden} className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-[#1c1c20] px-3 py-2 text-right font-mono text-sm font-bold text-white outline-none focus:border-indigo-500 sm:w-44" />
                       <button type="button" onClick={() => saveBalance(account)} disabled={savingId === account.id} aria-label={`Lưu số dư ${account.bankName}`} className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50"><Save className="h-4 w-4" /></button>
                       {account.isManuallyAdded && <button type="button" onClick={() => onDeleteBankAccount(account.id)} aria-label={`Xóa ${account.bankName}`} className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-rose-500/20 text-rose-400 hover:bg-rose-500/10"><Trash2 className="h-4 w-4" /></button>}
                     </div>
