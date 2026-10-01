@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import { pool } from './db';
+import { verifyMobileBearer } from './mobileAuth';
 
 declare module 'express-session' {
   interface SessionData {
@@ -36,12 +37,29 @@ export function createSessionMiddleware() {
   });
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
-    res.status(401).json({ error: 'Bạn cần đăng nhập để sử dụng chức năng này' });
-    return;
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  try {
+    const authorization = req.get('authorization');
+    if (authorization) {
+      const claims = await verifyMobileBearer(authorization);
+      if (!claims) {
+        res.status(401).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });
+        return;
+      }
+      req.authUserId = claims.userId;
+      req.mobileSessionId = claims.sessionId;
+      next();
+      return;
+    }
+    if (!req.session.userId) {
+      res.status(401).json({ error: 'Bạn cần đăng nhập để sử dụng chức năng này' });
+      return;
+    }
+    req.authUserId = req.session.userId;
+    next();
+  } catch (error) {
+    next(error);
   }
-  next();
 }
 
 export function normalizeEmail(value: unknown) {

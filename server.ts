@@ -20,6 +20,8 @@ import {
 import { validateCustomCategories } from './server/categoryValidation';
 import { validateAndNormalizeUserData } from './server/dataValidation';
 import { findBankByCode } from './shared/banks';
+import mobileRoutes from './server/mobileRoutes';
+import { getMobileJwtConfig } from './server/mobileJwt';
 import {
   buildAppleAuthorizationUrl,
   buildGoogleAuthorizationUrl,
@@ -37,6 +39,7 @@ async function startServer() {
   const HOST = process.env.HOST || '127.0.0.1';
 
   await migrateDatabase();
+  getMobileJwtConfig();
   app.set('trust proxy', 1);
   app.use('/api/auth/profile', express.json({ limit: '1500kb' }));
   app.use('/api/auth/profile', (error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -48,6 +51,25 @@ async function startServer() {
   });
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: false }));
+  const mobileOrigins = new Set(
+    (process.env.MOBILE_ALLOWED_ORIGINS || 'capacitor://localhost,https://localhost')
+      .split(',').map((origin) => origin.trim()).filter(Boolean)
+  );
+  app.use('/api', (req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    res.vary('Origin');
+    const origin = req.get('origin');
+    if (origin && mobileOrigins.has(origin)) {
+      res.set('Access-Control-Allow-Origin', origin);
+      res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, If-Match');
+      res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      if (req.method === 'OPTIONS') {
+        res.status(204).end();
+        return;
+      }
+    }
+    next();
+  });
   app.use(createSessionMiddleware());
 
   // Reject cross-site state-changing requests in addition to SameSite cookies.
@@ -58,7 +80,16 @@ async function startServer() {
     ) return next();
     const origin = req.get('origin');
     const host = req.get('host');
-    if (origin && host && new URL(origin).host !== host) {
+    const mobileRequest = Boolean(origin && mobileOrigins.has(origin) && (
+      req.path.startsWith('/mobile/') || req.get('authorization')
+    ));
+    let sameHost = false;
+    try {
+      sameHost = Boolean(origin && host && new URL(origin).host === host);
+    } catch {
+      sameHost = false;
+    }
+    if (origin && !sameHost && !mobileRequest) {
       res.status(403).json({ error: 'Nguồn yêu cầu không hợp lệ' });
       return;
     }
@@ -86,6 +117,8 @@ async function startServer() {
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', service: 'RoFinance Server' });
   });
+
+  app.use('/api/mobile', mobileRoutes);
 
   type CryptoMarketResult = {
     exchange: 'Binance' | 'OKX' | 'Bybit';
@@ -393,7 +426,7 @@ async function startServer() {
                CASE WHEN avatar_data IS NULL THEN NULL
                  ELSE '/api/auth/avatar/' || id::text || '?v=' || avatar_version::text
                END AS "avatarUrl"`,
-            [displayName, avatar.data, avatar.mime, req.session.userId]
+            [displayName, avatar.data, avatar.mime, req.authUserId]
           )
         : await pool.query<PublicUser>(
             `UPDATE users SET display_name = $1, updated_at = NOW()
@@ -402,7 +435,7 @@ async function startServer() {
                CASE WHEN avatar_data IS NULL THEN NULL
                  ELSE '/api/auth/avatar/' || id::text || '?v=' || avatar_version::text
                END AS "avatarUrl"`,
-            [displayName, req.session.userId]
+            [displayName, req.authUserId]
           );
       if (!result.rows[0]) {
         res.status(401).json({ error: 'Phiên đăng nhập không còn hợp lệ' });
@@ -416,7 +449,7 @@ async function startServer() {
   });
 
   app.get('/api/auth/avatar/:userId', requireAuth, async (req, res) => {
-    if (req.params.userId !== req.session.userId) {
+    if (req.params.userId !== req.authUserId) {
       res.status(403).end();
       return;
     }
@@ -427,14 +460,14 @@ async function startServer() {
         avatar_version: number;
       }>(
         'SELECT avatar_data, avatar_mime, avatar_version FROM users WHERE id = $1',
-        [req.session.userId]
+        [req.authUserId]
       );
       const avatar = result.rows[0];
       if (!avatar?.avatar_data || !avatar.avatar_mime) {
         res.status(404).end();
         return;
       }
-      const etag = `"avatar-${req.session.userId}-${avatar.avatar_version}"`;
+      const etag = `"avatar-${req.authUserId}-${avatar.avatar_version}"`;
       res.set({
         'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff',
@@ -467,14 +500,16 @@ async function startServer() {
     const db = await pool.connect();
     try {
       await db.query('BEGIN');
-      await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [req.session.userId]);
-      const result = await db.query<{ data: Record<string, unknown> }>(
-        'SELECT data FROM user_data WHERE user_id = $1 FOR UPDATE',
-        [req.session.userId]
+      await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [req.authUserId]);
+      const result = await db.query<{ data: Record<string, unknown>; revision: string }>(
+        'SELECT data, revision FROM user_data WHERE user_id = $1 FOR UPDATE',
+        [req.authUserId]
       );
       const data = result.rows[0]?.data || null;
+      const revision = result.rows[0]?.revision || '0';
       await db.query('COMMIT');
-      res.json({ data });
+      res.set('ETag', `"${revision}"`);
+      res.json({ data, revision });
     } catch (error) {
       await db.query('ROLLBACK');
       throw error;
@@ -484,6 +519,15 @@ async function startServer() {
   });
 
   app.put('/api/data', requireAuth, async (req, res) => {
+    const ifMatch = req.get('if-match');
+    if (!ifMatch) {
+      res.status(428).json({ error: 'Thiếu phiên bản dữ liệu. Vui lòng tải lại.' });
+      return;
+    }
+    if (ifMatch && !/^"\d+"$/.test(ifMatch)) {
+      res.status(400).json({ error: 'Phiên bản dữ liệu không hợp lệ' });
+      return;
+    }
     const allowedKeys = [
       'monthlyIncome', 'jars', 'transactions', 'bankAccounts',
       'cryptoAssets', 'safetyInvestments', 'debtItems', 'isAmountsHidden', 'preferences',
@@ -504,11 +548,17 @@ async function startServer() {
     const db = await pool.connect();
     try {
       await db.query('BEGIN');
-      await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [req.session.userId]);
-      const existingResult = await db.query<{ data: Record<string, unknown> }>(
-        'SELECT data FROM user_data WHERE user_id = $1 FOR UPDATE',
-        [req.session.userId]
+      await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [req.authUserId]);
+      const existingResult = await db.query<{ data: Record<string, unknown>; revision: string }>(
+        'SELECT data, revision FROM user_data WHERE user_id = $1 FOR UPDATE',
+        [req.authUserId]
       );
+      const revision = existingResult.rows[0]?.revision || '0';
+      if (ifMatch && ifMatch !== `"${revision}"`) {
+        await db.query('ROLLBACK');
+        res.status(409).json({ error: 'Dữ liệu đã thay đổi trên thiết bị khác. Vui lòng tải lại trước khi lưu.' });
+        return;
+      }
       const existingData = Object.fromEntries(
         Object.entries(existingResult.rows[0]?.data || {})
           .filter(([key]) => allowedKeys.includes(key))
@@ -520,14 +570,16 @@ async function startServer() {
         res.status(400).json({ error: validation.error });
         return;
       }
-      await db.query(
-        `INSERT INTO user_data (user_id, data) VALUES ($1, $2)
+      const saved = await db.query<{ revision: string }>(
+        `INSERT INTO user_data (user_id, data, revision) VALUES ($1, $2, 1)
          ON CONFLICT (user_id) DO UPDATE
-         SET data = EXCLUDED.data, updated_at = NOW()`,
-        [req.session.userId, JSON.stringify(validation.value)]
+         SET data = EXCLUDED.data, revision = user_data.revision + 1, updated_at = NOW()
+         RETURNING revision`,
+        [req.authUserId, JSON.stringify(validation.value)]
       );
       await db.query('COMMIT');
-      res.json({ success: true });
+      res.set('ETag', `"${saved.rows[0].revision}"`);
+      res.json({ success: true, revision: saved.rows[0].revision });
     } catch (error) {
       await db.query('ROLLBACK');
       throw error;
@@ -548,7 +600,7 @@ async function startServer() {
       return;
     }
     const result = await pool.query('SELECT data FROM user_data WHERE user_id = $1', [
-      req.session.userId,
+      req.authUserId,
     ]);
     const jars = result.rows[0]?.data?.jars;
     const savedBankAccounts = result.rows[0]?.data?.bankAccounts;

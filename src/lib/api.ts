@@ -39,14 +39,32 @@ export const authApi = {
       method: 'PATCH',
       body: JSON.stringify({ displayName, avatarDataUrl }),
     }),
-  logout: () => request<{ success: true }>('/api/auth/logout', { method: 'POST' }),
+  logout: async () => {
+    const result = await request<{ success: true }>('/api/auth/logout', { method: 'POST' });
+    dataRevision = null;
+    return result;
+  },
 };
 
 export const dataApi = {
-  load: () => request<{ data: Partial<LocalAppData> | null }>('/api/data'),
-  save: (data: Partial<LocalAppData>) =>
-    request<{ success: true }>('/api/data', {
+  load: async () => {
+    const result = await request<{ data: Partial<LocalAppData> | null; revision: string }>('/api/data');
+    if (typeof result.revision !== 'string' || !/^\d+$/.test(result.revision)) {
+      throw new Error('Backend chưa hỗ trợ phiên bản dữ liệu mới. Vui lòng cập nhật server.');
+    }
+    dataRevision = result.revision;
+    return result;
+  },
+  save: async (data: Partial<LocalAppData>) => {
+    if (dataRevision === null) throw new Error('Cần tải dữ liệu từ server trước khi lưu');
+    const result = await request<{ success: true; revision: string }>('/api/data', {
       method: 'PUT',
+      headers: { 'If-Match': `"${dataRevision}"` },
       body: JSON.stringify(data),
-    }),
+    });
+    dataRevision = result.revision;
+    return result;
+  },
 };
+
+let dataRevision: string | null = null;

@@ -25,6 +25,9 @@ Các biến cấu hình chính:
 | --- | --- |
 | `DATABASE_URL` | Chuỗi kết nối PostgreSQL; bắt buộc. |
 | `SESSION_SECRET` | Khóa ký session; bắt buộc, dài ít nhất 32 ký tự. |
+| `MOBILE_JWT_ACTIVE_KID` | Mã khóa đang dùng để ký access token mobile; chưa cần cho đến khi bật mobile. |
+| `MOBILE_JWT_KEYS` | JSON ánh xạ mã khóa tới khóa ngẫu nhiên do bạn tự tạo, mã hóa base64 (mỗi khóa ít nhất 32 byte). Giữ khóa cũ tạm thời khi xoay khóa. |
+| `MOBILE_ALLOWED_ORIGINS` | Các origin WebView Capacitor được cho phép chính xác; mặc định là localhost chuẩn của iOS và Android. |
 | `DATABASE_SSL` | Đặt `false` nếu kết nối cơ sở dữ liệu không dùng SSL. |
 | `DATABASE_POOL_SIZE` | Số kết nối tối đa trong pool PostgreSQL; mặc định là `10`. |
 | `APP_URL` | URL công khai dùng cho OAuth callback; cũng có thể lưu trong `app_config`. |
@@ -57,3 +60,9 @@ Server tự tạo các bảng cần thiết khi khởi động. Nếu môi trư�
 - `app_config` lưu cấu hình runtime phía server.
 
 API dữ liệu tài chính, AI và đồng bộ ngân hàng đều yêu cầu đăng nhập. Health check và các endpoint đăng ký/đăng nhập được truy cập công khai. Ở lần đăng nhập đầu tiên sau khi nâng cấp từ bộ nhớ cục bộ, dữ liệu IndexedDB/LocalStorage cũ được nhập một lần vào tài khoản PostgreSQL; dữ liệu này không tự động nhập vào tài khoản thứ hai trên cùng trình duyệt.
+
+## Ứng dụng mobile
+
+Frontend Android/iOS độc lập nằm tại [RoFinance-Mobile](RoFinance-Mobile/README.vi.md) và gọi backend này qua HTTPS. Web tiếp tục dùng session cookie; mobile dùng access token JWT ngắn hạn cùng refresh token có thể xoay và thu hồi. Để bật xác thực mobile, tự tạo khóa ngẫu nhiên bằng `openssl rand -base64 32`, điền vào `MOBILE_JWT_KEYS` dưới mã khóa bạn chọn, rồi đặt mã đó ở `MOBILE_JWT_ACTIVE_KID`. Chỉ lưu khóa trong cấu hình bí mật phía server, không đưa vào bản mobile hoặc Git. Khi chưa cấu hình, web vẫn hoạt động còn xác thực mobile sẽ từ chối yêu cầu.
+
+API dữ liệu trả về phiên bản và bắt buộc gửi `If-Match` khi ghi để báo xung đột thay vì âm thầm ghi đè. Những tab trình duyệt đã mở trước khi cập nhật cần tải lại trước khi chỉnh sửa. Frontend mobile ban đầu được tách từ frontend web, nên những thay đổi UI/logic sau này cần được rà soát ở cả hai dự án.
