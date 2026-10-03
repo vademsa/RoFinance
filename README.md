@@ -14,8 +14,10 @@ RoFinance is a personal finance app for tracking income, expenses, debts, and ba
 ```bash
 cp .env.example .env.local
 npm install
-npm run dev
+npm run dev:api
 ```
+
+In a second terminal, run `npm run dev:web` and open the Vite URL. The API and web UI are separate processes. Vite forwards `/api` to the API's loopback address; the browser continues to use same-origin session cookies.
 
 Edit `.env.local` before starting the app. At minimum, set `DATABASE_URL` to your PostgreSQL connection string and `SESSION_SECRET` to a random string of at least 32 characters. The app reads `.env.local` and then `.env`; these files are excluded from Git. Do not put real credentials in `.env.example` or commit them to the repository.
 
@@ -33,6 +35,9 @@ The main configuration values are:
 | `APP_URL` | Public base URL used for OAuth callbacks; can also be stored in `app_config`. |
 | `GEMINI_API_KEY` | Optional bootstrap fallback for AI features. |
 | `GEMINI_MODEL` | Optional Gemini model override. |
+| `API_PORT` | API listen port; defaults to `6869` on loopback. |
+| `WEB_PORT` | Production web-server port; defaults to `6868` on loopback. |
+| `API_INTERNAL_URL` | API origin used by the web process/Vite proxy; defaults to `http://127.0.0.1:6869`. Use HTTPS for a remote API. |
 
 `DATABASE_URL` and `SESSION_SECRET` must come from the environment because they are needed before the app can read PostgreSQL. For AI features, you can store the Gemini key under `gemini_api_key` in the `app_config` table, with `is_secret` set to `true`. Leave all values in the committed template blank; provide real values only in your local environment or server configuration.
 
@@ -53,8 +58,12 @@ Google requires an OAuth web client. Apple requires a Service ID with Sign in wi
 npm run lint
 npm run test:logic
 npm run build
-npm start
+npm run start:api
 ```
+
+Start the web process separately with `npm run start:web` (or use `pm2 start ecosystem.config.cjs` to start both). Point your existing HTTPS proxy/tunnel at the **web** port (`6868` by default); the web process forwards `/api` to the API port (`6869`). Keep the API port private. The browser, OAuth callbacks, and mobile client can continue to use the same public HTTPS origin. When migrating an existing PM2 deployment, replace the old combined `rofinance` process before starting the new web process, since both use port `6868`; do this during a deployment window. Building files alone does not restart live services.
+
+The web build is `dist/web`; the backend build is `dist/api.cjs`. Neither process serves the other's code directly.
 
 The server creates the required tables on startup. If you manage production migrations separately, the equivalent SQL is in [`server/migrations/001_initial.sql`](server/migrations/001_initial.sql).
 
@@ -70,6 +79,6 @@ Financial data, AI, and bank synchronization APIs require authentication. Health
 
 ## Mobile app
 
-The independent Android/iOS frontend is in [RoFinance-Mobile](RoFinance-Mobile/README.md). It calls this backend over HTTPS. Web authentication remains cookie-session based; mobile uses short-lived JWT access tokens and rotating, revocable refresh tokens. To enable mobile authentication, generate your own random key (`openssl rand -base64 32`), place it in `MOBILE_JWT_KEYS` under an ID of your choice, and select that ID with `MOBILE_JWT_ACTIVE_KID`. Keep the key only in server-side secret configuration, never in the mobile build or Git. If these variables are absent, web continues to work and mobile authentication fails closed.
+The independent Android/iOS frontend is now a sibling project at `../RoFinance-Mobile`, with its own Git repository, dependencies, and README. It calls this backend over HTTPS. Web authentication remains cookie-session based; mobile uses short-lived JWT access tokens and rotating, revocable refresh tokens. To enable mobile authentication, generate your own random key (`openssl rand -base64 32`), place it in `MOBILE_JWT_KEYS` under an ID of your choice, and select that ID with `MOBILE_JWT_ACTIVE_KID`. Keep the key only in server-side secret configuration, never in the mobile build or Git. If these variables are absent, web continues to work and mobile authentication fails closed.
 
 The data API returns a revision and requires `If-Match` on writes to report concurrent changes instead of silently overwriting them. Existing browser tabs opened before this update should be reloaded before editing. The mobile app's initial frontend is a separate copy of the web frontend, so future UI/domain-logic changes must be reviewed in both projects.

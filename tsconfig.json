@@ -23,5 +23,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["RoFinance-Mobile", "dist", "node_modules"]
+  "exclude": ["dist", "node_modules"]
 }

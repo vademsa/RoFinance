@@ -1,5 +1,4 @@
 import express from 'express';
-import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { rateLimit } from 'express-rate-limit';
 import {
@@ -35,11 +34,12 @@ import {
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT || 6868);
+  const PORT = Number(process.env.API_PORT || 6869);
   const HOST = process.env.HOST || '127.0.0.1';
 
   await migrateDatabase();
   getMobileJwtConfig();
+  // The web proxy preserves the trusted ingress forwarding headers unchanged.
   app.set('trust proxy', 1);
   app.use('/api/auth/profile', express.json({ limit: '1500kb' }));
   app.use('/api/auth/profile', (error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -786,24 +786,13 @@ ${JSON.stringify(recentTransactions ? recentTransactions.slice(0, 10) : [], null
     res.status(404).json({ error: 'API không tồn tại' });
   });
 
-  // Vite development middleware vs production static files
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
+  // The API never serves the web bundle. The web process owns the SPA.
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'API không tồn tại' });
+  });
 
   app.listen(PORT, HOST, () => {
-    console.log(`Server RoFinance running on http://${HOST}:${PORT}`);
+    console.log(`RoFinance API running on http://${HOST}:${PORT}`);
   });
 }
 
