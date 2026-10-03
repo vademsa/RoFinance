@@ -26,8 +26,8 @@ interface AnalyticsChartsProps {
   monthlySummaries: MonthlyCycleSummary[];
   resetDay: number;
   onUpdateSummaryIncome: (summaryId: string, income: number) => void;
-  onExportExcel: (cycle: AnalyticsCycle) => void;
-  onExportPDF: (cycle: AnalyticsCycle) => void;
+  onExportExcel?: (cycle: AnalyticsCycle) => void;
+  onExportPDF?: (cycle: AnalyticsCycle) => void;
 }
 
 function MetricCard({
@@ -407,14 +407,16 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
               </select>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {onExportExcel && onExportPDF ? <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => onExportExcel(selected)} className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-xs font-bold text-emerald-300 transition-colors hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500" aria-label={isEnglish ? 'Export selected cycle to Excel' : 'Xuất Excel cho chu kỳ đã chọn'}>
               <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />{isEnglish ? 'Export Excel' : 'Xuất Excel'}
             </button>
             <button type="button" onClick={() => onExportPDF(selected)} className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-zinc-700 bg-[#1c1c20] px-3 py-2.5 text-xs font-bold text-zinc-200 transition-colors hover:border-sky-500/40 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500" aria-label={isEnglish ? 'Print selected cycle or save as PDF' : 'In hoặc lưu PDF cho chu kỳ đã chọn'}>
               <Printer className="h-4 w-4" aria-hidden="true" />{isEnglish ? 'Print / PDF' : 'In / PDF'}
             </button>
-          </div>
+          </div> : <p className="text-xs text-zinc-400">
+            {isEnglish ? 'Exports are available on the web version.' : 'Xuất báo cáo hiện có trên bản web.'}
+          </p>}
         </div>
       </header>
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Apple,
   X,
@@ -11,7 +11,7 @@ import {
   Save,
   Trash2,
 } from 'lucide-react';
-import { authApi, type AuthUser } from '../lib/api';
+import { authApi, supportsOAuth, type AuthUser } from '@platform';
 
 const MAX_SOURCE_AVATAR_BYTES = 5 * 1024 * 1024;
 const MAX_SAVED_AVATAR_BYTES = 1024 * 1024;
@@ -95,7 +95,8 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   user?: AuthUser | null;
-  onAuthChanged: (user: AuthUser | null) => void;
+  onAuthChanged: (user: AuthUser | null, expectedUserId?: string | null) => void;
+  onLogoutWarning?: (warning: string) => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -103,6 +104,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   user,
   onAuthChanged,
+  onLogoutWarning,
 }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -110,6 +112,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const signOutInFlight = useRef(false);
   const [isProcessingAvatar, setIsProcessingAvatar] = useState(false);
   const [providers, setProviders] = useState({ google: false, apple: false });
   const [displayName, setDisplayName] = useState('');
@@ -117,7 +120,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
-    if (isOpen && !user) {
+    if (isOpen && !user && supportsOAuth) {
       authApi.providers().then(setProviders).catch(() => undefined);
     }
     if (isOpen && user) {
@@ -140,11 +143,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       if (isSignUp) {
         const { user } = await authApi.register(email, password);
-        onAuthChanged(user);
+        onAuthChanged(user, null);
         setSuccessMsg('Đăng ký tài khoản thành công! Dữ liệu của bạn được mã hóa & lưu bảo mật.');
       } else {
         const { user } = await authApi.login(email, password);
-        onAuthChanged(user);
+        onAuthChanged(user, null);
         setSuccessMsg('Đăng nhập thành công! Đã kết nối dữ liệu của bạn.');
       }
       setTimeout(() => {
@@ -158,15 +161,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const handleSignOut = async () => {
+    if (signOutInFlight.current || isLoading) return;
+    signOutInFlight.current = true;
+    setIsLoading(true);
+    const ownerId = user?.id || null;
     try {
-      await authApi.logout();
-      onAuthChanged(null);
+      const result = await authApi.logout();
+      if ('tokenRemovalFailed' in result && result.tokenRemovalFailed) {
+        onLogoutWarning?.('Đã khóa giao diện, nhưng không thể xóa thông tin phiên lưu trên thiết bị. Hãy thử đăng xuất lại khi ứng dụng hoạt động bình thường.');
+      } else if ('revocationPending' in result && result.revocationPending) {
+        onLogoutWarning?.('Đã đăng xuất trên thiết bị, nhưng chưa xác nhận được việc thu hồi phiên trên server do lỗi kết nối.');
+      }
+      onAuthChanged(null, ownerId);
       setSuccessMsg('Đã đăng xuất khỏi tài khoản.');
       setTimeout(() => {
         onClose();
       }, 1000);
     } catch (err: any) {
       setErrorMsg('Lỗi đăng xuất: ' + err.message);
+    } finally {
+      signOutInFlight.current = false;
+      setIsLoading(false);
     }
   };
 
@@ -190,6 +205,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleProfileSave = async (event: React.FormEvent) => {
     event.preventDefault();
+    const ownerId = user?.id;
+    if (!ownerId) return;
     setErrorMsg('');
     setSuccessMsg('');
     setIsLoading(true);
@@ -197,7 +214,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       await authApi.updateProfile(displayName, avatarDataUrl);
       const { user: persistedUser } = await authApi.me();
       if (!persistedUser) throw new Error('Phiên đăng nhập đã hết hạn.');
-      onAuthChanged(persistedUser);
+      if (persistedUser.id !== ownerId) return;
+      onAuthChanged(persistedUser, ownerId);
       setDisplayName(persistedUser.displayName);
       setAvatarPreview(persistedUser.avatarUrl);
       setAvatarDataUrl(undefined);
@@ -330,16 +348,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="h-px bg-zinc-800" />
               <button
                 onClick={handleSignOut}
-                className="w-full py-2.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-300 border border-rose-500/20 font-bold text-xs rounded-xl transition-all flex items-center justify-center space-x-2"
+                disabled={isLoading}
+                className="w-full py-2.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-300 border border-rose-500/20 font-bold text-xs rounded-xl transition-all flex items-center justify-center space-x-2 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <LogOut className="w-4 h-4 text-rose-400" />
-                <span>Đăng Xuất Tài Khoản</span>
+                <span>{isLoading ? 'Đang đăng xuất...' : 'Đăng Xuất Tài Khoản'}</span>
               </button>
             </div>
           ) : (
             /* Sign in / Sign up form */
             <div className="space-y-4">
-              <div className="grid gap-2">
+              {supportsOAuth && <div className="grid gap-2">
                 <button
                   type="button"
                   disabled={!providers.google}
@@ -358,19 +377,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <Apple className="w-4 h-4" />
                   <span>Tiếp tục với Apple</span>
                 </button>
-              </div>
+              </div>}
 
-              {!providers.google && !providers.apple && (
+              {supportsOAuth && !providers.google && !providers.apple && (
                 <p className="text-[11px] text-center text-zinc-500">
                   Đăng nhập Google và Apple sẽ hoạt động sau khi cấu hình OAuth phía server.
                 </p>
               )}
 
-              <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-zinc-600">
+              {supportsOAuth ? <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-zinc-600">
                 <span className="h-px flex-1 bg-zinc-800" />
                 <span>hoặc dùng email</span>
                 <span className="h-px flex-1 bg-zinc-800" />
-              </div>
+              </div> : <p className="text-center text-xs font-semibold text-zinc-400">Đăng nhập bằng email</p>}
 
               <form onSubmit={handleSubmit} className="space-y-4">
               <div className="flex items-center justify-between text-xs font-bold border-b border-zinc-800 pb-2">

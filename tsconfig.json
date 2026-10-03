@@ -18,10 +18,11 @@
     "paths": {
       "@/*": [
         "./*"
-      ]
+      ],
+      "@platform": ["./src/platform/web.ts"]
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["dist", "node_modules"]
+  "exclude": ["RoFinance-Mobile", "dist", "node_modules"]
 }

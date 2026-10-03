@@ -41,30 +41,31 @@ export const authApi = {
     }),
   logout: async () => {
     const result = await request<{ success: true }>('/api/auth/logout', { method: 'POST' });
-    dataRevision = null;
+    dataRevisions.clear();
     return result;
   },
 };
 
 export const dataApi = {
-  load: async () => {
+  load: async (ownerId: string) => {
     const result = await request<{ data: Partial<LocalAppData> | null; revision: string }>('/api/data');
     if (typeof result.revision !== 'string' || !/^\d+$/.test(result.revision)) {
       throw new Error('Backend chưa hỗ trợ phiên bản dữ liệu mới. Vui lòng cập nhật server.');
     }
-    dataRevision = result.revision;
+    dataRevisions.set(ownerId, result.revision);
     return result;
   },
-  save: async (data: Partial<LocalAppData>) => {
-    if (dataRevision === null) throw new Error('Cần tải dữ liệu từ server trước khi lưu');
+  save: async (ownerId: string, data: Partial<LocalAppData>) => {
+    const revision = dataRevisions.get(ownerId);
+    if (revision === undefined) throw new Error('Cần tải dữ liệu từ server trước khi lưu');
     const result = await request<{ success: true; revision: string }>('/api/data', {
       method: 'PUT',
-      headers: { 'If-Match': `"${dataRevision}"` },
+      headers: { 'If-Match': `"${revision}"` },
       body: JSON.stringify(data),
     });
-    dataRevision = result.revision;
+    dataRevisions.set(ownerId, result.revision);
     return result;
   },
 };
 
-let dataRevision: string | null = null;
+const dataRevisions = new Map<string, string>();

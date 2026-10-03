@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef } from 'react';
+import React, { lazy, Suspense, useCallback, useState, useEffect, useRef } from 'react';
 import { Jar, Transaction, BankAccount, CryptoAsset, DebtItem, JarPlanSnapshot, MonthlyCycleSummary, SafetyInvestment, TransactionCategory } from './types';
 import { CalendarCheck2, LayoutTemplate, Sparkles, X } from 'lucide-react';
 import {
@@ -12,22 +12,21 @@ import {
 import { Navbar } from './components/Navbar';
 import { JarManagement } from './components/JarManagement';
 import { TransactionList } from './components/TransactionList';
-import { AnalyticsCharts } from './components/AnalyticsCharts';
-import { InvestmentDashboard } from './components/InvestmentDashboard';
 import { IncomeAllocatorModal } from './components/IncomeAllocatorModal';
 import { TransactionModal } from './components/TransactionModal';
 import { BankAccountsModal } from './components/BankAccountsModal';
-import { AIAdvisorDrawer } from './components/AIAdvisorDrawer';
 import { BudgetAlertsBanner } from './components/BudgetAlertsBanner';
 import { DebtManagementModal } from './components/DebtManagementModal';
 import { AuthModal } from './components/AuthModal';
 import { JarPlanSelectorModal } from './components/JarPlanSelectorModal';
 import { LegalPage } from './components/LegalPage';
 import { TranslationLayer } from './components/TranslationLayer';
-import { exportToExcel, exportToPDFPrint } from './utils/exporter';
 import { formatVND } from './utils/formatters';
-import { loadLocalDatabase } from './lib/localDb';
-import { authApi, AuthUser, dataApi } from './lib/api';
+import {
+  apiFetch, authApi, dataApi, exportToExcel, exportToPDFPrint,
+  isNativeApp, loadLegacyData, markLegacyImport, supportsReportExport,
+  type AuthUser,
+} from '@platform';
 import {
   AppPreferences,
   DEFAULT_APP_PREFERENCES,
@@ -60,6 +59,10 @@ import { migrateTransactionPaymentMethods } from './utils/paymentMethods';
 import { findBankByCode } from '../shared/banks';
 import { CUSTOM_JAR_PLAN_ID, findJarPlan } from './constants/jarPlans';
 import { createJarPlanSnapshot, getJarConfigurationSignature, restoreMissingJarPercentages, switchJarPlan } from './utils/jarPlans';
+
+const AnalyticsCharts = lazy(() => import('./components/AnalyticsCharts').then((module) => ({ default: module.AnalyticsCharts })));
+const InvestmentDashboard = lazy(() => import('./components/InvestmentDashboard').then((module) => ({ default: module.InvestmentDashboard })));
+const AIAdvisorDrawer = lazy(() => import('./components/AIAdvisorDrawer').then((module) => ({ default: module.AIAdvisorDrawer })));
 
 function canonicalizeBankDetails<T extends { bankCode: string; bankName: string }>(item: T): T {
   const normalizedCode = item.bankCode.trim().toUpperCase();
@@ -134,10 +137,14 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
+  const [logoutWarning, setLogoutWarning] = useState('');
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
+  const [retryLoadAttempt, setRetryLoadAttempt] = useState(0);
   const isInitialLoadRef = useRef<boolean>(true);
+  const currentUserIdRef = useRef<string | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  // Initialize state from LocalStorage or defaults
+  // Financial data comes from the API; only web may import legacy local data.
   const [monthlyIncome, setMonthlyIncome] = useState<number>(DEFAULT_MONTHLY_INCOME);
 
   const [jars, setJars] = useState<Jar[]>(DEFAULT_JARS);
@@ -196,9 +203,40 @@ export default function App() {
     archivedCount: number;
   } | null>(null);
 
-  const handleAuthChanged = (nextUser: AuthUser | null) => {
+  const handleAuthChanged = (nextUser: AuthUser | null, expectedUserId?: string | null) => {
+    if (expectedUserId !== undefined && currentUserIdRef.current !== expectedUserId) return;
+    if (nextUser) setLogoutWarning('');
     if (nextUser?.id !== user?.id) {
       setIsDataLoading(Boolean(nextUser));
+      setLoadedUserId(null);
+      setDataError('');
+      isInitialLoadRef.current = true;
+      currentUserIdRef.current = nextUser?.id || null;
+      setMonthlyIncome(DEFAULT_MONTHLY_INCOME);
+      setJars(DEFAULT_JARS);
+      setArchivedJars([]);
+      setActiveJarPlanId(CUSTOM_JAR_PLAN_ID);
+      setJarPlanSnapshots([]);
+      setTransactions(INITIAL_TRANSACTIONS);
+      setCustomCategories([]);
+      setBankAccounts(DEFAULT_BANK_ACCOUNTS);
+      setCryptoAssets(DEFAULT_CRYPTO_ASSETS);
+      setSafetyInvestments([]);
+      setDebtItems(DEFAULT_DEBT_ITEMS);
+      setIsAmountsHidden(false);
+      setPreferences(DEFAULT_APP_PREFERENCES);
+      setActiveCycleStart('');
+      setMonthlySummaries([]);
+      setRolloverNotice(null);
+      setPlanChangeNotice(null);
+      setIsIncomeModalOpen(false);
+      setIsTransactionModalOpen(false);
+      setIsBankAccountsModalOpen(false);
+      setIsAIAdvisorOpen(false);
+      setIsDebtModalOpen(false);
+      setIsJarPlanModalOpen(false);
+      setSelectedTransactionJarId(null);
+      setEditingTransaction(null);
     }
     setUser(nextUser);
   };
@@ -206,26 +244,39 @@ export default function App() {
   // Restore the server-side session.
   useEffect(() => {
     authApi.me()
-      .then(({ user: currentUser }) => setUser(currentUser))
-      .catch(() => setUser(null))
+      .then(({ user: currentUser }) => {
+        currentUserIdRef.current = currentUser?.id || null;
+        setUser(currentUser);
+      })
+      .catch(() => {
+        currentUserIdRef.current = null;
+        setUser(null);
+      })
       .finally(() => setIsAuthLoading(false));
   }, []);
 
   // Load account data. Existing local data is imported once for a new account.
   useEffect(() => {
+    let cancelled = false;
     if (!user) {
       isInitialLoadRef.current = true;
+      setLoadedUserId(null);
       setIsDataLoading(false);
       return;
     }
     async function initAccountData() {
+      isInitialLoadRef.current = true;
+      setLoadedUserId(null);
       setIsDataLoading(true);
       setDataError('');
       try {
-        const { data: serverData } = await dataApi.load();
-        const migrationOwner = localStorage.getItem('vf_postgres_migration_owner');
-        const canImportLegacyData = !serverData && !migrationOwner;
-        const data = serverData || (canImportLegacyData ? await loadLocalDatabase() : {
+        const { data: serverData } = await dataApi.load(user.id);
+        if (cancelled) return;
+        const { data: legacyData, canImportLegacyData } = serverData
+          ? { data: null, canImportLegacyData: false }
+          : await loadLegacyData();
+        if (cancelled) return;
+        const data = serverData || legacyData || {
           monthlyIncome: DEFAULT_MONTHLY_INCOME,
           jars: DEFAULT_JARS,
           archivedJars: [],
@@ -241,7 +292,7 @@ export default function App() {
           preferences: DEFAULT_APP_PREFERENCES,
           activeCycleStart: '',
           monthlySummaries: [],
-        });
+        };
         if (data.monthlyIncome !== undefined) setMonthlyIncome(data.monthlyIncome);
         if (data.isAmountsHidden !== undefined) setIsAmountsHidden(data.isAmountsHidden);
         const nextPreferences = { ...DEFAULT_APP_PREFERENCES, ...data.preferences };
@@ -353,8 +404,9 @@ export default function App() {
           spendingNormalizationChanged ||
           percentageRepair.changed
         ) {
-          await dataApi.save(normalizedData);
-          if (canImportLegacyData) localStorage.setItem('vf_postgres_migration_owner', user.id);
+          await dataApi.save(user.id, normalizedData);
+          if (cancelled) return;
+          if (canImportLegacyData) markLegacyImport(user.id);
         }
         if (!serverData && (
           !canImportLegacyData || !Array.isArray(data.jars) || data.jars.length === 0
@@ -362,20 +414,22 @@ export default function App() {
           setIsJarPlanModalOpen(true);
         }
         isInitialLoadRef.current = false;
+        setLoadedUserId(user.id);
       } catch (error: any) {
-        setDataError(error.message || 'Không thể tải dữ liệu tài khoản');
+        if (!cancelled) setDataError(error.message || 'Không thể tải dữ liệu tài khoản');
       } finally {
-        setIsDataLoading(false);
+        if (!cancelled) setIsDataLoading(false);
       }
     }
     initAccountData();
-  }, [user?.id]);
+    return () => { cancelled = true; };
+  }, [user?.id, retryLoadAttempt]);
 
   // Persist account changes to PostgreSQL (debounced).
-  const queueDataSave = (data: Parameters<typeof dataApi.save>[0]) => {
+  const queueDataSave = (ownerId: string, data: Parameters<typeof dataApi.save>[1]) => {
     const operation = saveQueueRef.current
       .catch(() => undefined)
-      .then(() => dataApi.save(data))
+      .then(() => currentUserIdRef.current === ownerId ? dataApi.save(ownerId, data) : undefined)
       .then(() => undefined);
     saveQueueRef.current = operation.catch(() => undefined);
     return operation;
@@ -384,7 +438,7 @@ export default function App() {
   useEffect(() => {
     if (!user || isInitialLoadRef.current) return;
     const timer = window.setTimeout(() => {
-      queueDataSave({
+      queueDataSave(user.id, {
         monthlyIncome,
         jars,
         archivedJars,
@@ -401,8 +455,8 @@ export default function App() {
         monthlySummaries,
         customCategories,
       })
-        .then(() => setDataError(''))
-        .catch((error) => setDataError(error.message));
+        .then(() => { if (currentUserIdRef.current === user.id) setDataError(''); })
+        .catch((error) => { if (currentUserIdRef.current === user.id) setDataError(error.message); });
     }, 400);
     return () => window.clearTimeout(timer);
   }, [
@@ -563,6 +617,7 @@ export default function App() {
         <div className="text-center space-y-4">
           <h1 className="text-3xl font-black">RoFinance</h1>
           <p className="text-sm text-zinc-400">Đăng nhập để truy cập dữ liệu và các chức năng tài chính.</p>
+          {logoutWarning && <p role="alert" className="max-w-md rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">{logoutWarning}</p>}
           <button onClick={() => setIsAuthModalOpen(true)} className="px-5 py-3 bg-indigo-600 rounded-xl font-bold">
             Đăng nhập / Tạo tài khoản
           </button>
@@ -576,6 +631,7 @@ export default function App() {
           onClose={() => setIsAuthModalOpen(false)}
           user={null}
           onAuthChanged={handleAuthChanged}
+          onLogoutWarning={setLogoutWarning}
         />
       </div>
     );
@@ -583,6 +639,22 @@ export default function App() {
 
   if (isDataLoading) {
     return <div className="min-h-screen bg-[#09090b] text-zinc-300 flex items-center justify-center">Đang tải dữ liệu tài khoản...</div>;
+  }
+
+  if (loadedUserId !== user.id) {
+    return (
+      <div className="min-h-screen bg-[#09090b] p-4 text-zinc-100 flex items-center justify-center">
+        <div role="alert" className="w-full max-w-md space-y-4 rounded-2xl border border-rose-500/30 bg-[#18181b] p-6 text-center">
+          <h1 className="text-lg font-bold">Không thể tải dữ liệu tài khoản</h1>
+          <p className="text-sm text-rose-300">{dataError || 'Vui lòng thử lại.'}</p>
+          <div className="flex justify-center gap-3">
+            <button type="button" onClick={() => setRetryLoadAttempt((value) => value + 1)} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white">Thử lại</button>
+            <button type="button" onClick={() => setIsAuthModalOpen(true)} className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-bold">Tài khoản</button>
+          </div>
+        </div>
+        <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} user={user} onAuthChanged={handleAuthChanged} onLogoutWarning={setLogoutWarning} />
+      </div>
+    );
   }
 
   // Handlers
@@ -633,7 +705,7 @@ export default function App() {
     setJars(updatedJars);
     if (percentageChanged) setActiveJarPlanId(nextActiveJarPlanId);
     setDataError('');
-    await queueDataSave({
+    await queueDataSave(user.id, {
       monthlyIncome,
       jars: updatedJars,
       archivedJars,
@@ -948,9 +1020,10 @@ export default function App() {
   };
 
   const handleSaveBankBalance = async (accountId: string, balance: number) => {
+    const ownerId = user.id;
     const account = bankAccounts.find((item) => item.id === accountId);
     if (!account) throw new Error('Không tìm thấy tài khoản đã liên kết');
-    const res = await fetch('/api/bank/balance', {
+    const res = await apiFetch('/api/bank/balance', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -960,6 +1033,7 @@ export default function App() {
       }),
     });
     const data = await res.json();
+    if (currentUserIdRef.current !== ownerId) return;
     if (!res.ok || !data.success) throw new Error(data.error || 'Không thể cập nhật số dư');
     setBankAccounts((prev) =>
       prev.map((item) =>
@@ -1130,6 +1204,7 @@ export default function App() {
         )}
 
         {activeTab === 'crypto' && (
+          <Suspense fallback={<p className="py-8 text-center text-sm text-zinc-400">Đang tải đầu tư...</p>}>
           <InvestmentDashboard
             cryptoAssets={cryptoAssets}
             onAddCryptoAsset={handleAddCryptoAsset}
@@ -1143,9 +1218,11 @@ export default function App() {
             onToggleHideAmounts={() => setIsAmountsHidden((prev) => !prev)}
             jars={jars}
           />
+          </Suspense>
         )}
 
         {activeTab === 'analytics' && (
+          <Suspense fallback={<p className="py-8 text-center text-sm text-zinc-400">Đang tải thống kê...</p>}>
           <AnalyticsCharts
             jars={jars}
             jarRegistry={jarRegistry}
@@ -1154,14 +1231,15 @@ export default function App() {
             isAmountsHidden={isAmountsHidden}
             monthlySummaries={monthlySummaries}
             resetDay={preferences.monthlyResetDay}
-            onExportExcel={(cycle) => exportToExcel(jars, cycle.transactions, cycle.income, jarRegistry, cycle)}
-            onExportPDF={(cycle) => exportToPDFPrint(jars, cycle.transactions, cycle.income, jarRegistry, cycle)}
+            onExportExcel={supportsReportExport ? (cycle) => exportToExcel(jars, cycle.transactions, cycle.income, jarRegistry, cycle) : undefined}
+            onExportPDF={supportsReportExport ? (cycle) => exportToPDFPrint(jars, cycle.transactions, cycle.income, jarRegistry, cycle) : undefined}
             onUpdateSummaryIncome={(summaryId, income) => setMonthlySummaries((current) =>
               current.map((summary) => summary.id === summaryId
                 ? { ...summary, income }
                 : summary)
             )}
           />
+          </Suspense>
         )}
       </main>
 
@@ -1172,7 +1250,7 @@ export default function App() {
         aria-label={preferences.language === 'en' ? 'Open AI financial assistant' : 'Mở trợ lý tài chính AI'}
         aria-controls="ai-advisor-popup"
         aria-expanded={false}
-        className="fixed bottom-4 right-4 z-40 inline-flex h-12 cursor-pointer items-center gap-2 rounded-full border border-indigo-400/40 bg-indigo-600 px-4 text-xs font-black text-white shadow-xl shadow-indigo-950/40 transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b] sm:bottom-6 sm:right-6"
+        className={`${isNativeApp ? 'mobile-ai-launcher ' : ''}fixed bottom-4 right-4 z-40 inline-flex h-12 cursor-pointer items-center gap-2 rounded-full border border-indigo-400/40 bg-indigo-600 px-4 text-xs font-black text-white shadow-xl shadow-indigo-950/40 transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b] sm:bottom-6 sm:right-6`}
       >
         <Sparkles className="h-4 w-4" aria-hidden="true" />
         <span>{preferences.language === 'en' ? 'AI assistant' : 'Trợ lý AI'}</span>
@@ -1256,20 +1334,21 @@ export default function App() {
         isAmountsHidden={isAmountsHidden}
       />
 
-      <AIAdvisorDrawer
+      {isAIAdvisorOpen && <Suspense fallback={null}><AIAdvisorDrawer
         isOpen={isAIAdvisorOpen}
         onClose={closeAIAdvisor}
         jars={jars}
         monthlyIncome={monthlyIncome}
         transactions={transactions}
         isAmountsHidden={isAmountsHidden}
-      />
+      /></Suspense>}
 
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         user={user}
         onAuthChanged={handleAuthChanged}
+        onLogoutWarning={setLogoutWarning}
       />
 
       {/* Simple Footer */}

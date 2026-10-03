@@ -1,5 +1,5 @@
 import express from 'express';
-import { createProxyMiddleware } from 'http-proxy-middleware';
+import httpProxy from 'http-proxy';
 import path from 'path';
 
 export function validateApiTarget(value: string): string {
@@ -17,24 +17,23 @@ export function validateApiTarget(value: string): string {
 export function createWebApp(apiTarget: string, webDir: string) {
   const app = express();
   app.disable('x-powered-by');
-  app.use('/api', createProxyMiddleware({
+  const apiProxy = httpProxy.createProxyServer({
     // Express strips the mount path before proxying; restore /api on the target.
     target: `${validateApiTarget(apiTarget)}/api`,
     changeOrigin: false,
     // Preserve ingress forwarding headers. Adding another hop here would make
     // API rate limits see only the local tunnel/web process for every user.
     xfwd: false,
-    on: {
-      error: (_error, _req, res) => {
-        if ('writeHead' in res && !res.headersSent) {
-          res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify({ error: 'API tạm thời không khả dụng' }));
-        } else {
-          res.destroy();
-        }
-      },
-    },
-  }));
+  });
+  apiProxy.on('error', (_error, _req, res) => {
+    if ('writeHead' in res && !res.headersSent) {
+      res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'API tạm thời không khả dụng' }));
+    } else {
+      res.destroy();
+    }
+  });
+  app.use('/api', (req, res) => apiProxy.web(req, res));
 
   app.use(express.static(webDir, { index: false }));
   app.get('*', (_req, res) => {

@@ -26,6 +26,7 @@ import {
   recalculateJarsWithDebt,
 } from '../utils/debtCalculator';
 import { CurrencyInput } from './CurrencyInput';
+import { apiFetch } from '@platform';
 import { toLocalDateKey } from '../utils/monthlyCycle';
 
 const defaultStartDate = () => toLocalDateKey(new Date());
@@ -254,7 +255,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
     setIsLoadingAiSuggestion(true);
     setAiSuggestionError('');
     try {
-      const response = await fetch('/api/ai/jar-allocation', {
+      const response = await apiFetch('/api/ai/jar-allocation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jars, monthlyIncome }),

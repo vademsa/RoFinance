@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        '@platform': path.resolve(__dirname, 'src/platform/web.ts'),
       },
     },
     server: {

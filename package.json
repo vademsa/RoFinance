@@ -3,12 +3,16 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": ["RoFinance-Mobile"],
   "scripts": {
     "dev": "vite",
     "dev:web": "vite",
+    "dev:mobile": "npm run dev --workspace rofinance-mobile",
     "dev:api": "tsx server.ts",
     "build": "npm run build:web && npm run build:api && npm run build:web-server",
     "build:web": "vite build",
+    "build:mobile": "npm run build --workspace rofinance-mobile",
+    "sync:mobile": "npm run sync --workspace rofinance-mobile",
     "build:api": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/api.cjs",
     "build:web-server": "esbuild webServer.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/web-server.cjs",
     "start": "node dist/web-server.cjs",
@@ -16,7 +20,8 @@
     "start:api": "node dist/api.cjs",
     "clean": "rm -rf dist server.cjs",
     "lint": "tsc --noEmit",
-    "test:logic": "tsx --test src/utils/*.test.ts server/*.test.ts"
+    "test:logic": "tsx --test src/utils/*.test.ts server/*.test.ts",
+    "lint:mobile": "npm run lint --workspace rofinance-mobile"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -28,7 +33,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^8.0.1",
     "express-session": "^1.18.2",
-    "http-proxy-middleware": "^3.0.5",
+    "http-proxy": "^1.18.1",
     "jose": "^6.1.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
@@ -47,6 +52,7 @@
     "@types/connect-pg-simple": "^7.0.3",
     "@types/express": "^4.17.21",
     "@types/express-session": "^1.18.2",
+    "@types/http-proxy": "^1.17.17",
     "@types/node": "^22.14.0",
     "@types/pg": "^8.15.5",
     "autoprefixer": "^10.4.21",

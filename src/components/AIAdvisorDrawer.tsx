@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { X, Sparkles, Send, Bot, User, Loader2, Lightbulb, ShieldCheck } from 'lucide-react';
 import { Jar, Transaction } from '../types';
+import { apiFetch } from '@platform';
 
 interface AIAdvisorDrawerProps {
   isOpen: boolean;
@@ -65,7 +66,7 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/financial-advice', {
+      const res = await apiFetch('/api/financial-advice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

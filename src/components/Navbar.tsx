@@ -8,9 +8,11 @@ import {
   Moon,
   Sun,
   X,
+  Wallet,
+  ReceiptText,
 } from 'lucide-react';
 import type { AppPreferences } from '../lib/preferences';
-import type { AuthUser } from '../lib/api';
+import { isNativeApp, type AuthUser } from '@platform';
 import {
   formatCycleDate,
   getFinancialCycleStart,
@@ -77,7 +79,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     theme: resolvedTheme === 'light' ? 'dark' : 'light',
   });
   return (
-    <header className="sticky top-0 z-30 bg-[#09090b]/90 backdrop-blur-md text-zinc-100 pt-2 sm:pt-4 px-2 sm:px-6 lg:px-8">
+    <header className={`${isNativeApp ? 'mobile-safe-header ' : ''}sticky top-0 z-30 bg-[#09090b]/90 backdrop-blur-md text-zinc-100 pt-2 sm:pt-4 px-2 sm:px-6 lg:px-8`}>
       <div className="max-w-7xl mx-auto">
         <div className="bg-[#121214] border border-zinc-800 rounded-2xl sm:rounded-3xl px-3 sm:px-6 py-2.5 sm:py-3.5 shadow-xl flex items-center justify-between">
           {/* Logo & Brand */}
@@ -172,8 +174,25 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Mobile Tab bar below navbar */}
-        <div className="md:hidden grid grid-cols-4 gap-1 py-1.5 my-2 bg-[#121214] rounded-2xl border border-zinc-800 text-[10px] font-medium px-1.5">
+        {isNativeApp ? <nav aria-label="Điều hướng chính" className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 gap-1 border-t border-zinc-800 bg-[#121214]/95 px-2 pt-2 text-[11px] font-semibold shadow-2xl backdrop-blur-lg md:hidden">
+          {([
+            ['jars', Wallet, 'Hũ'],
+            ['transactions', ReceiptText, 'Giao dịch'],
+            ['crypto', Coins, 'Đầu tư'],
+            ['analytics', PieChart, 'Thống kê'],
+          ] as const).map(([tab, Icon, label]) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              aria-current={activeTab === tab ? 'page' : undefined}
+              className={`flex min-h-12 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl px-1 transition-colors focus-visible:outline-2 focus-visible:outline-indigo-400 ${activeTab === tab ? tab === 'crypto' ? 'bg-amber-500 text-zinc-950' : 'bg-indigo-600 text-white' : tab === 'crypto' ? 'text-amber-400' : 'text-zinc-400'}`}
+            >
+              <Icon className="h-4 w-4" aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav> : <div className="md:hidden grid grid-cols-4 gap-1 py-1.5 my-2 bg-[#121214] rounded-2xl border border-zinc-800 text-[10px] font-medium px-1.5">
           <button
             onClick={() => setActiveTab('jars')}
             className={`py-1.5 px-1 rounded-lg ${activeTab === 'jars' ? 'bg-indigo-600 text-white font-bold' : 'text-zinc-400'}`}
@@ -204,7 +223,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             Thống Kê
           </button>
-        </div>
+        </div>}
       </div>
 
       {isSettingsOpen && createPortal(

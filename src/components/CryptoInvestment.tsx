@@ -8,6 +8,7 @@ import { formatVND, formatUSD } from '../utils/formatters';
 import { getDisplayCurrencyCode } from '../lib/preferences';
 import { getRuntimePreferences } from '../lib/preferences';
 import { toLocalDateKey } from '../utils/monthlyCycle';
+import { apiFetch } from '@platform';
 import {
   TrendingUp,
   TrendingDown,
@@ -90,7 +91,7 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
       setIsSearchingCoins(true);
       setCoinSearchError('');
       try {
-        const response = await fetch(`/api/crypto/search?q=${encodeURIComponent(coinSearch.trim())}`, {
+        const response = await apiFetch(`/api/crypto/search?q=${encodeURIComponent(coinSearch.trim())}`, {
           signal: controller.signal,
         });
         const data = await response.json();
@@ -119,7 +120,7 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
         ])
       );
 
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/crypto/binance/tickers?symbols=${encodeURIComponent(symbolsToFetch.join(','))}`
       );
 
@@ -158,7 +159,7 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
       const symbols = [...new Set(cryptoAssets.map((asset) => asset.symbol.toUpperCase()))];
       const responses = await Promise.allSettled(
         symbols.map(async (symbol) => {
-          const response = await fetch(`/api/crypto/search?q=${encodeURIComponent(symbol)}`);
+          const response = await apiFetch(`/api/crypto/search?q=${encodeURIComponent(symbol)}`);
           if (!response.ok) return [];
           const data = await response.json();
           return (data.items || []) as CryptoSearchResult[];
@@ -288,7 +289,7 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
 
   const handleFillLivePrice = async () => {
     try {
-      const response = await fetch(`/api/crypto/search?q=${encodeURIComponent(formSymbol)}`);
+      const response = await apiFetch(`/api/crypto/search?q=${encodeURIComponent(formSymbol)}`);
       const data = await response.json();
       const market = (data.items || []).find(
         (item: CryptoSearchResult) =>

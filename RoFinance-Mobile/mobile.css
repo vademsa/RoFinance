@@ -1,0 +1,20 @@
+@import '../src/index.css';
+@source '../src';
+
+@media (max-width: 767px) {
+  .mobile-safe-header {
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+  }
+
+  .mobile-bottom-nav {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  main {
+    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom)) !important;
+  }
+
+  .mobile-ai-launcher {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
+}
