@@ -102,7 +102,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Navigation Tabs */}
-          <div className="hidden md:flex items-center space-x-1 bg-[#1c1c20] p-1 rounded-2xl border border-zinc-800">
+          {!isNativeApp && <div className="hidden md:flex items-center space-x-1 bg-[#1c1c20] p-1 rounded-2xl border border-zinc-800">
             <button
               onClick={() => setActiveTab('jars')}
               className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition-all ${
@@ -145,7 +145,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <PieChart className="w-3.5 h-3.5" />
               <span>Thống Kê</span>
             </button>
-          </div>
+          </div>}
 
           <div className="ml-auto flex shrink-0 items-center gap-2 md:ml-2">
             <button
@@ -174,7 +174,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {isNativeApp ? <nav aria-label="Điều hướng chính" className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 gap-1 border-t border-zinc-800 bg-[#121214]/95 px-2 pt-2 text-[11px] font-semibold shadow-2xl backdrop-blur-lg md:hidden">
+        {isNativeApp ? createPortal(<nav aria-label="Điều hướng chính" className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 gap-2 border-t border-zinc-800 bg-[#121214]/95 px-2 pt-2 text-[11px] font-semibold shadow-2xl backdrop-blur-lg">
           {([
             ['jars', Wallet, 'Hũ'],
             ['transactions', ReceiptText, 'Giao dịch'],
@@ -192,7 +192,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{label}</span>
             </button>
           ))}
-        </nav> : <div className="md:hidden grid grid-cols-4 gap-1 py-1.5 my-2 bg-[#121214] rounded-2xl border border-zinc-800 text-[10px] font-medium px-1.5">
+        </nav>, document.body) : <div className="md:hidden grid grid-cols-4 gap-1 py-1.5 my-2 bg-[#121214] rounded-2xl border border-zinc-800 text-[10px] font-medium px-1.5">
           <button
             onClick={() => setActiveTab('jars')}
             className={`py-1.5 px-1 rounded-lg ${activeTab === 'jars' ? 'bg-indigo-600 text-white font-bold' : 'text-zinc-400'}`}
