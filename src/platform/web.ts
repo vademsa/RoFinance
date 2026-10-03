@@ -7,6 +7,7 @@ export { exportToExcel, exportToPDFPrint };
 
 export const isNativeApp = false;
 export const supportsOAuth = true;
+export const supportsNativeGoogle = false;
 export const supportsReportExport = true;
 
 export const apiFetch = (path: string, init?: RequestInit) => fetch(path, init);

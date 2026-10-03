@@ -6,6 +6,12 @@ import { defaultDisplayName } from './profile';
 
 type Provider = 'google' | 'apple';
 
+export class OAuthAccountLinkRequiredError extends Error {
+  constructor() {
+    super('Tài khoản đã tồn tại và không thể tự động liên kết Google. Vui lòng dùng phương thức đăng nhập hiện có.');
+  }
+}
+
 interface GoogleConfig {
   clientId: string;
   clientSecret: string;
@@ -146,7 +152,12 @@ export async function exchangeAppleCode(code: string) {
   return { subject: payload.sub, email: payload.email };
 }
 
-export async function findOrCreateOAuthUser(provider: Provider, subject: string, rawEmail: string) {
+export async function findOrCreateOAuthUser(
+  provider: Provider,
+  subject: string,
+  rawEmail: string,
+  options: { allowEmailLink?: boolean } = {},
+) {
   const email = rawEmail.trim().toLowerCase();
   const client = await pool.connect();
   try {
@@ -165,6 +176,9 @@ export async function findOrCreateOAuthUser(provider: Provider, subject: string,
       'SELECT id, email FROM users WHERE LOWER(email) = $1 FOR UPDATE',
       [email]
     )).rows[0];
+    if (user && options.allowEmailLink === false) {
+      throw new OAuthAccountLinkRequiredError();
+    }
     if (!user) {
       user = (await client.query<{ id: string; email: string }>(
         `INSERT INTO users (email, password_hash, display_name)

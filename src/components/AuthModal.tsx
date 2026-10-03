@@ -11,7 +11,7 @@ import {
   Save,
   Trash2,
 } from 'lucide-react';
-import { authApi, supportsOAuth, type AuthUser } from '@platform';
+import { authApi, supportsNativeGoogle, supportsOAuth, type AuthUser } from '@platform';
 
 const MAX_SOURCE_AVATAR_BYTES = 5 * 1024 * 1024;
 const MAX_SAVED_AVATAR_BYTES = 1024 * 1024;
@@ -120,7 +120,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
-    if (isOpen && !user && supportsOAuth) {
+    if (isOpen && !user && (supportsOAuth || supportsNativeGoogle)) {
       authApi.providers().then(setProviders).catch(() => undefined);
     }
     if (isOpen && user) {
@@ -181,6 +181,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setErrorMsg('Lỗi đăng xuất: ' + err.message);
     } finally {
       signOutInFlight.current = false;
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    if (isLoading) return;
+    setErrorMsg('');
+    setSuccessMsg('');
+    setIsLoading(true);
+    try {
+      const result = await authApi.googleLogin();
+      if (result) {
+        onAuthChanged(result.user, null);
+        setSuccessMsg('Đăng nhập Google thành công.');
+        setTimeout(onClose, 1000);
+      }
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Không thể đăng nhập Google.');
+    } finally {
       setIsLoading(false);
     }
   };
@@ -358,17 +377,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           ) : (
             /* Sign in / Sign up form */
             <div className="space-y-4">
-              {supportsOAuth && <div className="grid gap-2">
+              {(supportsOAuth || supportsNativeGoogle) && <div className="grid gap-2">
                 <button
                   type="button"
-                  disabled={!providers.google}
-                  onClick={() => window.location.assign('/api/auth/google')}
+                  disabled={!providers.google || isLoading}
+                  onClick={handleGoogleSignIn}
                   className="w-full py-3 bg-white hover:bg-zinc-100 text-zinc-900 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <span className="font-black text-base leading-none">G</span>
                   <span>Tiếp tục với Google</span>
                 </button>
-                <button
+                {supportsOAuth && <button
                   type="button"
                   disabled={!providers.apple}
                   onClick={() => window.location.assign('/api/auth/apple')}
@@ -376,16 +395,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 >
                   <Apple className="w-4 h-4" />
                   <span>Tiếp tục với Apple</span>
-                </button>
+                </button>}
               </div>}
 
-              {supportsOAuth && !providers.google && !providers.apple && (
+              {(supportsOAuth || supportsNativeGoogle) && !providers.google && !providers.apple && (
                 <p className="text-[11px] text-center text-zinc-500">
-                  Đăng nhập Google và Apple sẽ hoạt động sau khi cấu hình OAuth phía server.
+                  {supportsNativeGoogle
+                    ? 'Đăng nhập Google sẽ hoạt động sau khi cấu hình OAuth phía server và trên thiết bị.'
+                    : 'Đăng nhập Google và Apple sẽ hoạt động sau khi cấu hình OAuth phía server.'}
                 </p>
               )}
 
-              {supportsOAuth ? <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-zinc-600">
+              {(supportsOAuth || supportsNativeGoogle) ? <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-zinc-600">
                 <span className="h-px flex-1 bg-zinc-800" />
                 <span>hoặc dùng email</span>
                 <span className="h-px flex-1 bg-zinc-800" />

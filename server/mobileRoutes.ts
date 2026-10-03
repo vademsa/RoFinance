@@ -5,6 +5,8 @@ import { pool } from './db';
 import { createMobileSession, requireMobileAuth, revokeMobileSession, rotateMobileRefreshToken } from './mobileAuth';
 import { getMobileJwtConfig } from './mobileJwt';
 import { defaultDisplayName, type PublicUser } from './profile';
+import { getGoogleConfig, findOrCreateOAuthUser, OAuthAccountLinkRequiredError } from './oauth';
+import { verifyGoogleIdToken } from './googleIdToken';
 
 const router = express.Router();
 const limiter = rateLimit({
@@ -25,6 +27,51 @@ router.use((_req, res, next) => {
   }
   next();
 });
+
+router.get('/auth/providers', asyncRoute(async (_req, res) => {
+  const googleConfig = await getGoogleConfig();
+  const googleClientId = typeof googleConfig?.clientId === 'string' &&
+    googleConfig.clientId.endsWith('.apps.googleusercontent.com')
+    ? googleConfig.clientId : null;
+  res.json({ google: Boolean(googleClientId), apple: false, googleClientId });
+}));
+
+router.post('/auth/google', limiter, asyncRoute(async (req, res) => {
+  const googleConfig = await getGoogleConfig();
+  if (!googleConfig?.clientId ||
+    !googleConfig.clientId.endsWith('.apps.googleusercontent.com')) {
+    res.status(503).json({ error: 'Đăng nhập Google chưa được cấu hình trên server' });
+    return;
+  }
+  let identity: Awaited<ReturnType<typeof verifyGoogleIdToken>>;
+  try {
+    identity = await verifyGoogleIdToken(req.body?.idToken, googleConfig.clientId);
+  } catch {
+    res.status(401).json({ error: 'Google ID token không hợp lệ hoặc đã hết hạn' });
+    return;
+  }
+  let account: { id: string; email: string };
+  try {
+    account = await findOrCreateOAuthUser('google', identity.subject, identity.email, {
+      allowEmailLink: identity.allowEmailLink,
+    });
+  } catch (error) {
+    if (error instanceof OAuthAccountLinkRequiredError) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+  const userResult = await pool.query<PublicUser>(
+    `SELECT id, email, display_name AS "displayName",
+       CASE WHEN avatar_data IS NULL THEN NULL
+         ELSE '/api/auth/avatar/' || id::text || '?v=' || avatar_version::text
+       END AS "avatarUrl"
+     FROM users WHERE id = $1`,
+    [account.id],
+  );
+  res.json({ user: userResult.rows[0], ...(await createMobileSession(account.id)) });
+}));
 
 router.post('/auth/register', limiter, asyncRoute(async (req, res) => {
   const email = normalizeEmail(req.body.email);

@@ -83,4 +83,6 @@ The Android/iOS app lives in [RoFinance-Mobile](RoFinance-Mobile/README.md) in t
 
 Mobile calls this backend over HTTPS. Web authentication remains cookie-session based; mobile uses short-lived JWT access tokens and rotating, revocable refresh tokens. To enable mobile authentication, generate your own random key (`openssl rand -base64 32`), place it in `MOBILE_JWT_KEYS` under an ID of your choice, and select that ID with `MOBILE_JWT_ACTIVE_KID`. Keep the key only in server-side secret configuration, never in the mobile build or Git. If these variables are absent, web continues to work and mobile authentication fails closed.
 
+Native Google Sign-In uses the server-side `google_oauth` web client ID. The mobile app sends a Google ID token to `/api/mobile/auth/google`; the backend validates it before issuing a mobile JWT. See the mobile README for Android and iOS OAuth client setup.
+
 The data API returns a revision and requires `If-Match` on writes to report concurrent changes instead of silently overwriting them. Existing browser tabs opened before this update should be reloaded before editing. Shared UI and business rules are changed once in `src/`; only platform-specific behavior requires a separate edit.

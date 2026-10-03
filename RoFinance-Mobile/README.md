@@ -9,7 +9,17 @@ This is the Capacitor Android/iOS target in the RoFinance monorepo. Its screens,
 - Android and iOS native project scaffolds and the initial finance UI are included.
 - Email/password registration and sign-in use mobile JWT endpoints. Access tokens stay in memory; rotating refresh tokens use iOS Keychain or Android Keystore-backed storage. Financial records are not cached in WebView IndexedDB/localStorage.
 - The backend reports a revision conflict if data changed on another device. Reopen/reload the account before making further changes; automatic conflict merging is not implemented.
-- Native Google/Apple OAuth and native Excel/PDF export are not implemented yet. The mobile app hides those actions; use the web app for exports.
+- Native Google Sign-In is implemented. It exchanges a Google ID token for the shared backend's mobile JWT session; device-specific OAuth clients must be configured before it can work on a real device. Native Apple Sign-In and Excel/PDF export are not implemented yet; use the web app for exports.
+
+## Set up native Google Sign-In
+
+1. Configure the backend's `google_oauth` entry as described in the root README. Its **web client ID** is sent to the native app by `/api/mobile/auth/providers`; its client secret stays on the backend. Deploy the updated backend before installing a mobile build with Google Sign-In. Never put the client secret or a JWT signing key into the mobile app.
+2. Choose the final Android application ID and iOS bundle ID before creating native OAuth clients. The committed `com.example.rofinance.mobile` identifier is only a placeholder.
+3. In the **same Google Cloud project** as the web client, create an Android OAuth client for the Android application ID and the SHA-1 fingerprint of the signing certificate. From the Android project directory, use `./gradlew signingReport` (Windows: `.\gradlew.bat signingReport`) to find the debug fingerprint. For a Play Store build, also register the Play App Signing certificate fingerprint; the upload-key fingerprint is not sufficient.
+4. Create an iOS OAuth client for the final iOS bundle ID. Replace `REPLACE_WITH_IOS_CLIENT_ID` and `REPLACE_WITH_REVERSED_IOS_CLIENT_ID` in `ios/App/App/Info.plist` with the full iOS client ID and its reversed URL scheme from Google Cloud Console, respectively.
+5. Run `npm run sync:mobile` from the repository root, rebuild the native app, then test Google Sign-In on a real Android/iOS device. The Google button is enabled only when the backend advertises its web client ID. No Google ID token is trusted without server-side signature, issuer, audience, expiry, and verified-email checks.
+
+Google's [native backend-auth guide](https://developers.google.com/identity/sign-in/android/backend-auth) and the [plugin setup guide](https://capawesome.io/docs/plugins/google-sign-in/) provide the platform credential details. If you plan to publish the iOS app, also review [App Store Review Guideline 4.8](https://developer.apple.com/app-store/review/guidelines/#login-services) for equivalent sign-in options.
 
 ## Before building
 

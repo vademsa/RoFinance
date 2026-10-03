@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { SecureStorage } from '@aparajita/capacitor-secure-storage';
+import { ErrorCode, GoogleSignIn } from '@capawesome/capacitor-google-sign-in';
 import type { LocalAppData } from '../src/lib/localDb';
 
 export interface AuthUser {
@@ -26,6 +27,13 @@ export const MOBILE_REFRESH_STORAGE_KEY = 'rofinance-mobile-refresh';
 let accessToken: string | null = null;
 const dataRevisions = new Map<string, string>();
 let refreshPromise: Promise<boolean> | null = null;
+let googleInitialization: Promise<void> | null = null;
+
+interface MobileProviders {
+  google: boolean;
+  apple: false;
+  googleClientId: string | null;
+}
 
 function ensureNative() {
   if (!Capacitor.isNativePlatform()) {
@@ -139,9 +147,40 @@ export const authApi = {
       throw error;
     }
   },
-  providers: async () => ({ google: false, apple: false }),
+  providers: () => request<MobileProviders>('/api/mobile/auth/providers', {}, false),
   register: (email: string, password: string) => signIn('/api/mobile/auth/register', email, password),
   login: (email: string, password: string) => signIn('/api/mobile/auth/login', email, password),
+  googleLogin: async (): Promise<{ user: AuthUser } | null> => {
+    ensureNative();
+    const providers = await authApi.providers();
+    if (!providers.google || !providers.googleClientId) {
+      throw new Error('Đăng nhập Google chưa được cấu hình trên server.');
+    }
+    if (!googleInitialization) {
+      googleInitialization = GoogleSignIn.initialize({ clientId: providers.googleClientId })
+        .catch((error) => {
+          googleInitialization = null;
+          throw error;
+        });
+    }
+    await googleInitialization;
+    let googleIdToken: string;
+    try {
+      const result = await GoogleSignIn.signIn();
+      googleIdToken = result.idToken;
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error &&
+        error.code === ErrorCode.SignInCanceled) return null;
+      throw error;
+    }
+    if (!googleIdToken) throw new Error('Google không trả về ID token.');
+    const result = await request<{ user: AuthUser } & MobileTokens>('/api/mobile/auth/google', {
+      method: 'POST', body: JSON.stringify({ idToken: googleIdToken }),
+    }, false);
+    await storeTokens(result);
+    dataRevisions.clear();
+    return { user: await hydrateAvatar(result.user) };
+  },
   updateProfile: async (displayName: string, avatarDataUrl?: string | null) => {
     const result = await request<{ user: AuthUser }>('/api/auth/profile', {
       method: 'PATCH', body: JSON.stringify({ displayName, avatarDataUrl }),
@@ -164,6 +203,9 @@ export const authApi = {
         await SecureStorage.removeItem(MOBILE_REFRESH_STORAGE_KEY);
       } catch {
         tokenRemovalFailed = true;
+      }
+      if (googleInitialization) {
+        await GoogleSignIn.signOut().catch(() => undefined);
       }
     }
     return { success: true as const, revocationPending, tokenRemovalFailed };

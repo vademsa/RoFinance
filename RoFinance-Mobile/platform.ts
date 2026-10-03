@@ -6,6 +6,7 @@ export type { AuthUser } from './mobileApi';
 
 export const isNativeApp = true;
 export const supportsOAuth = false;
+export const supportsNativeGoogle = true;
 export const supportsReportExport = false;
 
 export async function loadLegacyData() {

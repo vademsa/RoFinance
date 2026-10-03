@@ -7,3 +7,6 @@ project(':aparajita-capacitor-secure-storage').projectDir = new File('../../node
 
 include ':capacitor-preferences'
 project(':capacitor-preferences').projectDir = new File('../../node_modules/@capacitor/preferences/android')
+
+include ':capawesome-capacitor-google-sign-in'
+project(':capawesome-capacitor-google-sign-in').projectDir = new File('../../node_modules/@capawesome/capacitor-google-sign-in/android')

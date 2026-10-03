@@ -34,6 +34,10 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
+  googleLogin: async (): Promise<{ user: AuthUser } | null> => {
+    window.location.assign('/api/auth/google');
+    return null;
+  },
   updateProfile: (displayName: string, avatarDataUrl?: string | null) =>
     request<{ user: AuthUser }>('/api/auth/profile', {
       method: 'PATCH',

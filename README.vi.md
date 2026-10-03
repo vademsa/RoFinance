@@ -76,4 +76,6 @@ API dữ liệu tài chính, AI và đồng bộ ngân hàng đều yêu cầu �
 
 Mobile gọi backend này qua HTTPS. Web tiếp tục dùng session cookie; mobile dùng access token JWT ngắn hạn cùng refresh token có thể xoay và thu hồi. Để bật xác thực mobile, tự tạo khóa ngẫu nhiên bằng `openssl rand -base64 32`, điền vào `MOBILE_JWT_KEYS` dưới mã khóa bạn chọn, rồi đặt mã đó ở `MOBILE_JWT_ACTIVE_KID`. Chỉ lưu khóa trong cấu hình bí mật phía server, không đưa vào bản mobile hoặc Git. Khi chưa cấu hình, web vẫn hoạt động còn xác thực mobile sẽ từ chối yêu cầu.
 
+Đăng nhập Google native dùng web client ID từ `google_oauth` trên server. Mobile gửi Google ID token đến `/api/mobile/auth/google`; backend xác minh trước khi cấp JWT mobile. Xem README mobile để cấu hình OAuth client Android và iOS.
+
 API dữ liệu trả về phiên bản và bắt buộc gửi `If-Match` khi ghi để báo xung đột thay vì âm thầm ghi đè. Những tab trình duyệt đã mở trước khi cập nhật cần tải lại trước khi chỉnh sửa. Giao diện và quy tắc chung chỉ sửa một lần trong `src/`; hành vi riêng từng nền tảng mới cần chỉnh riêng.
