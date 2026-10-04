@@ -8,7 +8,9 @@ import { formatVND, formatUSD } from '../utils/formatters';
 import { getDisplayCurrencyCode } from '../lib/preferences';
 import { getRuntimePreferences } from '../lib/preferences';
 import { toLocalDateKey } from '../utils/monthlyCycle';
+import { COMMON_COIN_ICON_IDS } from '../utils/coinIcons';
 import { apiFetch } from '@platform';
+import { CoinIcon } from './CoinIcon';
 import {
   TrendingUp,
   TrendingDown,
@@ -80,6 +82,35 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
   const [coinSearchResults, setCoinSearchResults] = useState<CryptoSearchResult[]>([]);
   const [isSearchingCoins, setIsSearchingCoins] = useState(false);
   const [coinSearchError, setCoinSearchError] = useState('');
+  const [coinIconIds, setCoinIconIds] = useState<Record<string, number>>(COMMON_COIN_ICON_IDS);
+
+  const iconSymbols = [...new Set([
+    ...cryptoAssets.map((asset) => asset.symbol.toUpperCase()),
+    ...coinSearchResults.map((coin) => coin.symbol.toUpperCase()),
+    formSymbol.toUpperCase(),
+  ])].filter((symbol) => /^[A-Z0-9]{1,30}$/.test(symbol) && !COMMON_COIN_ICON_IDS[symbol]);
+  const iconSymbolsKey = iconSymbols.join(',');
+
+  useEffect(() => {
+    if (!iconSymbolsKey) return;
+    const controller = new AbortController();
+    const symbols = iconSymbolsKey.split(',');
+    void Promise.all(Array.from({ length: Math.ceil(symbols.length / 25) }, (_, index) =>
+      apiFetch(`/api/crypto/icons?symbols=${encodeURIComponent(symbols.slice(index * 25, index * 25 + 25).join(','))}`,
+        { signal: controller.signal })
+        .then(async (response) => response.ok ? response.json() as Promise<{ ids?: Record<string, number> }> : null)
+    )).then((responses) => {
+      if (controller.signal.aborted) return;
+      const ids: Record<string, number> = {};
+      for (const response of responses) {
+        for (const [symbol, id] of Object.entries(response?.ids || {})) {
+          if (/^[A-Z0-9]{1,30}$/.test(symbol) && Number.isSafeInteger(id) && id > 0) ids[symbol] = id;
+        }
+      }
+      setCoinIconIds((current) => ({ ...current, ...ids }));
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [iconSymbolsKey]);
 
   useEffect(() => {
     if (!isModalOpen || editingAsset || coinSearch.trim().length < 1) {
@@ -575,9 +606,7 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
                       <tr key={asset.id} className="hover:bg-[#18181b] transition-colors">
                         <td className="py-4 px-6">
                           <div className="flex items-center space-x-3">
-                            <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-black text-amber-400 text-xs">
-                              {asset.symbol}
-                            </div>
+                            <CoinIcon symbol={asset.symbol} coinMarketCapId={coinIconIds[asset.symbol.toUpperCase()]} />
                             <div>
                               <div className="font-extrabold text-white text-sm">
                                 {asset.name} ({asset.symbol})
@@ -714,9 +743,7 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
                     <tr key={coinItem.symbol} className="hover:bg-[#18181b] transition-colors">
                       <td className="py-4 px-6">
                         <div className="flex items-center space-x-3">
-                          <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-black text-amber-400 text-xs">
-                            {coinItem.coin}
-                          </div>
+                          <CoinIcon symbol={coinItem.coin} coinMarketCapId={coinIconIds[coinItem.coin]} />
                           <div>
                             <div className="font-extrabold text-white text-sm">
                               {coinItem.name}
@@ -824,7 +851,10 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
                 </label>
                 {editingAsset ? (
                   <div className="p-3 bg-[#121214] border border-zinc-700 rounded-2xl text-xs">
-                    <strong className="text-white">{formSymbol}</strong>
+                    <span className="inline-flex items-center gap-2">
+                      <CoinIcon symbol={formSymbol} coinMarketCapId={coinIconIds[formSymbol.toUpperCase()]} size="sm" />
+                      <strong className="text-white">{formSymbol}</strong>
+                    </span>
                     <span className="ml-2 text-zinc-400">{formExchange} · {formMarketPair}</span>
                   </div>
                 ) : (
@@ -853,9 +883,12 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
                             onClick={() => handleSelectSearchResult(coin)}
                             className="w-full px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-zinc-800 text-left border-b border-zinc-800/60 last:border-0"
                           >
-                            <span>
-                              <strong className="text-white text-xs">{coin.symbol}</strong>
-                              <span className="block text-[10px] text-zinc-500">{coin.pair}</span>
+                            <span className="inline-flex items-center gap-2">
+                              <CoinIcon symbol={coin.symbol} coinMarketCapId={coinIconIds[coin.symbol.toUpperCase()]} size="sm" />
+                              <span>
+                                <strong className="text-white text-xs">{coin.symbol}</strong>
+                                <span className="block text-[10px] text-zinc-500">{coin.pair}</span>
+                              </span>
                             </span>
                             <span className="text-right">
                               <strong className="block text-xs font-mono text-amber-400">
@@ -871,7 +904,8 @@ export const CryptoInvestment: React.FC<CryptoInvestmentProps> = ({
                 )}
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-zinc-500">Coin đã chọn</span>
-                  <strong className="text-amber-400">
+                  <strong className="inline-flex items-center gap-1.5 text-amber-400">
+                    <CoinIcon symbol={formSymbol} coinMarketCapId={coinIconIds[formSymbol.toUpperCase()]} size="xs" />
                     {formSymbol} · {formExchange}
                   </strong>
                 </div>

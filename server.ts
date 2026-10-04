@@ -17,6 +17,7 @@ import {
   validateProfileUpdate,
 } from './server/profile';
 import { validateCustomCategories } from './server/categoryValidation';
+import { lookupCoinMarketCapIds, parseCoinIconSymbols } from './server/coinMarketCap';
 import { validateAndNormalizeUserData } from './server/dataValidation';
 import { findBankByCode } from './shared/banks';
 import mobileRoutes from './server/mobileRoutes';
@@ -154,6 +155,20 @@ async function startServer() {
     } catch (error: any) {
       console.error('Binance ticker proxy error:', error);
       res.status(502).json({ error: error.message || 'Không thể tải giá Binance' });
+    }
+  });
+
+  app.get('/api/crypto/icons', requireAuth, async (req, res) => {
+    const symbols = parseCoinIconSymbols(req.query.symbols);
+    if (!symbols) {
+      res.status(400).json({ error: 'Danh sách mã coin không hợp lệ' });
+      return;
+    }
+    try {
+      res.json({ ids: await lookupCoinMarketCapIds(symbols) });
+    } catch (error) {
+      console.error('CoinMarketCap icon lookup error:', error);
+      res.status(502).json({ error: 'Không thể tải biểu tượng coin' });
     }
   });
 

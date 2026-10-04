@@ -1350,7 +1350,6 @@ export default function App() {
 
       {isNativeApp && <MobileEdgeRefresh
         scrollRef={mobileContentRef}
-        enabled={!isRefreshingData}
         language={preferences.language}
         onRefresh={refreshAccountData}
       />}
