@@ -18,6 +18,7 @@ import { BankAccountsModal } from './components/BankAccountsModal';
 import { BudgetAlertsBanner } from './components/BudgetAlertsBanner';
 import { DebtManagementModal } from './components/DebtManagementModal';
 import { AuthModal } from './components/AuthModal';
+import { MobileEdgeRefresh } from './components/MobileEdgeRefresh';
 import { JarPlanSelectorModal } from './components/JarPlanSelectorModal';
 import { LegalPage } from './components/LegalPage';
 import { TranslationLayer } from './components/TranslationLayer';
@@ -143,6 +144,12 @@ export default function App() {
   const isInitialLoadRef = useRef<boolean>(true);
   const currentUserIdRef = useRef<string | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const lastSaveOperationRef = useRef<Promise<void> | null>(null);
+  const saveErrorRef = useRef<Error | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
+  const refreshInProgressRef = useRef(false);
+  const refreshResolverRef = useRef<{ resolve: () => void; reject: (error: Error) => void } | null>(null);
+  const [isRefreshingData, setIsRefreshingData] = useState(false);
 
   // Financial data comes from the API; only web may import legacy local data.
   const [monthlyIncome, setMonthlyIncome] = useState<number>(DEFAULT_MONTHLY_INCOME);
@@ -217,6 +224,11 @@ export default function App() {
     if (expectedUserId !== undefined && currentUserIdRef.current !== expectedUserId) return;
     if (nextUser) setLogoutWarning('');
     if (nextUser?.id !== user?.id) {
+      refreshResolverRef.current?.reject(new Error('Tài khoản đã thay đổi trong lúc tải dữ liệu.'));
+      refreshResolverRef.current = null;
+      refreshInProgressRef.current = false;
+      setIsRefreshingData(false);
+      saveErrorRef.current = null;
       setIsDataLoading(Boolean(nextUser));
       setLoadedUserId(null);
       setDataError('');
@@ -275,13 +287,19 @@ export default function App() {
       return;
     }
     async function initAccountData() {
+      const backgroundRefresh = refreshInProgressRef.current;
       isInitialLoadRef.current = true;
-      setLoadedUserId(null);
-      setIsDataLoading(true);
+      if (!backgroundRefresh) {
+        setLoadedUserId(null);
+        setIsDataLoading(true);
+      }
       setDataError('');
       try {
         const { data: serverData } = await dataApi.load(user.id);
         if (cancelled) return;
+        if (backgroundRefresh && !serverData) {
+          throw new Error('Không tìm thấy dữ liệu đã lưu trên server. Dữ liệu hiện tại được giữ nguyên.');
+        }
         const { data: legacyData, canImportLegacyData } = serverData
           ? { data: null, canImportLegacyData: false }
           : await loadLegacyData();
@@ -425,10 +443,18 @@ export default function App() {
         }
         isInitialLoadRef.current = false;
         setLoadedUserId(user.id);
+        if (backgroundRefresh) refreshResolverRef.current?.resolve();
       } catch (error: any) {
-        if (!cancelled) setDataError(error.message || 'Không thể tải dữ liệu tài khoản');
+        if (!cancelled) {
+          const failure = error instanceof Error ? error : new Error('Không thể tải dữ liệu tài khoản');
+          setDataError(failure.message);
+          if (backgroundRefresh) {
+            isInitialLoadRef.current = false;
+            refreshResolverRef.current?.reject(failure);
+          }
+        }
       } finally {
-        if (!cancelled) setIsDataLoading(false);
+        if (!cancelled && !backgroundRefresh) setIsDataLoading(false);
       }
     }
     initAccountData();
@@ -441,13 +467,67 @@ export default function App() {
       .catch(() => undefined)
       .then(() => currentUserIdRef.current === ownerId ? dataApi.save(ownerId, data) : undefined)
       .then(() => undefined);
+    lastSaveOperationRef.current = operation;
+    void operation.then(
+      () => {
+        if (lastSaveOperationRef.current === operation) lastSaveOperationRef.current = null;
+        saveErrorRef.current = null;
+      },
+      (error) => {
+        if (lastSaveOperationRef.current === operation) lastSaveOperationRef.current = null;
+        saveErrorRef.current = error instanceof Error ? error : new Error('Không thể lưu dữ liệu');
+      },
+    );
     saveQueueRef.current = operation.catch(() => undefined);
     return operation;
   };
 
+  const refreshAccountData = async () => {
+    if (!user || loadedUserId !== user.id || refreshInProgressRef.current) return;
+    refreshInProgressRef.current = true;
+    setIsRefreshingData(true);
+    isInitialLoadRef.current = true;
+    let shouldSaveBeforeLoad = saveTimerRef.current !== null || Boolean(saveErrorRef.current);
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    try {
+      if (lastSaveOperationRef.current) {
+        try {
+          await lastSaveOperationRef.current;
+        } catch {
+          shouldSaveBeforeLoad = true;
+        }
+      }
+      if (currentUserIdRef.current !== user.id) throw new Error('Tài khoản đã thay đổi.');
+      if (shouldSaveBeforeLoad) {
+        await queueDataSave(user.id, {
+          monthlyIncome, jars, archivedJars, activeJarPlanId, jarPlanSnapshots,
+          transactions, bankAccounts, cryptoAssets, safetyInvestments, debtItems,
+          isAmountsHidden, preferences, activeCycleStart, monthlySummaries, customCategories,
+        });
+      }
+      await new Promise<void>((resolve, reject) => {
+        refreshResolverRef.current = { resolve, reject };
+        setRetryLoadAttempt((value) => value + 1);
+      });
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error('Không thể tải lại dữ liệu');
+      if (currentUserIdRef.current === user.id) setDataError(failure.message);
+      throw failure;
+    } finally {
+      refreshResolverRef.current = null;
+      refreshInProgressRef.current = false;
+      setIsRefreshingData(false);
+      if (currentUserIdRef.current === user.id) isInitialLoadRef.current = false;
+    }
+  };
+
   useEffect(() => {
     if (!user || isInitialLoadRef.current) return;
-    const timer = window.setTimeout(() => {
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
       queueDataSave(user.id, {
         monthlyIncome,
         jars,
@@ -468,7 +548,10 @@ export default function App() {
         .then(() => { if (currentUserIdRef.current === user.id) setDataError(''); })
         .catch((error) => { if (currentUserIdRef.current === user.id) setDataError(error.message); });
     }, 400);
-    return () => window.clearTimeout(timer);
+    return () => {
+      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    };
   }, [
     monthlyIncome,
     jars,
@@ -1120,7 +1203,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main ref={mobileContentRef} className={`${isNativeApp ? 'mobile-app-content ' : ''}mx-auto w-full max-w-7xl flex-1 px-2 pb-20 pt-3 sm:px-6 sm:pb-24 sm:pt-6 lg:px-8`}>
+      <main ref={mobileContentRef} className={`${isNativeApp ? 'mobile-app-content ' : ''}${isRefreshingData ? 'pointer-events-none ' : ''}mx-auto w-full max-w-7xl flex-1 px-2 pb-20 pt-3 sm:px-6 sm:pb-24 sm:pt-6 lg:px-8`}>
         {rolloverNotice && (
           <div className="mb-4 flex items-start gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-emerald-50 shadow-lg shadow-emerald-950/10" role="status">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
@@ -1264,6 +1347,13 @@ export default function App() {
         )}
         {isNativeApp && appFooter}
       </main>
+
+      {isNativeApp && <MobileEdgeRefresh
+        scrollRef={mobileContentRef}
+        enabled={!isRefreshingData}
+        language={preferences.language}
+        onRefresh={refreshAccountData}
+      />}
 
       {!isAIAdvisorOpen && <button
         ref={aiLauncherRef}

@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { X, Sparkles, Send, Bot, User, Loader2, Lightbulb, ShieldCheck } from 'lucide-react';
 import { Jar, Transaction } from '../types';
-import { apiFetch } from '@platform';
+import { apiFetch, isNativeApp } from '@platform';
 
 interface AIAdvisorDrawerProps {
   isOpen: boolean;
@@ -38,6 +38,32 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const chatLogRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!isOpen || !isNativeApp) return;
+    const viewport = window.visualViewport;
+    const updateViewport = () => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      const height = viewport?.height || window.innerHeight;
+      panel.style.setProperty('--mobile-viewport-top', `${viewport?.offsetTop || 0}px`);
+      panel.style.setProperty('--mobile-viewport-height', `${height}px`);
+      panel.dataset.compact = height < 560 ? 'true' : 'false';
+    };
+    updateViewport();
+    viewport?.addEventListener('resize', updateViewport);
+    viewport?.addEventListener('scroll', updateViewport);
+    return () => {
+      viewport?.removeEventListener('resize', updateViewport);
+      viewport?.removeEventListener('scroll', updateViewport);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && chatLogRef.current) chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
+  }, [isOpen, messages, isLoading]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -107,11 +133,12 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
 
   return (
     <aside
+      ref={panelRef}
       id="ai-advisor-popup"
       role="dialog"
       aria-modal="false"
       aria-labelledby="ai-advisor-title"
-      className="fixed bottom-4 right-4 z-40 h-[min(70dvh,42rem)] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[24rem] sm:bottom-6 sm:right-6"
+      className={`${isNativeApp ? 'mobile-ai-panel ' : ''}fixed bottom-4 right-4 z-40 h-[min(70dvh,42rem)] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[24rem] sm:bottom-6 sm:right-6`}
     >
       <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-[#18181b] text-zinc-100 shadow-2xl shadow-black/50">
         {/* Header */}
@@ -137,7 +164,7 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
         </div>
 
         {/* Quick Question Prompts */}
-        <div className="bg-[#121214] p-3 border-b border-zinc-800 space-y-2">
+        <div className="mobile-ai-suggestions bg-[#121214] p-3 border-b border-zinc-800 space-y-2">
           <div className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider flex items-center space-x-1">
             <Lightbulb className="w-3 h-3 text-indigo-400" />
             <span>Gợi ý câu hỏi nhanh:</span>
@@ -161,7 +188,7 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
         </div>
 
         {/* Chat Messages Log */}
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#121214] p-3">
+        <div ref={chatLogRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#121214] p-3">
           {messages.map((msg) => {
             const isUser = msg.sender === 'user';
             return (
@@ -273,6 +300,7 @@ export const AIAdvisorDrawer: React.FC<AIAdvisorDrawerProps> = ({
           >
             <input
               type={isAmountsHidden ? 'password' : 'text'}
+              aria-label="Câu hỏi cho trợ lý AI"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Hỏi AI về cách quản lý dòng tiền, hũ tài chính..."
