@@ -30,6 +30,12 @@ interface AnalyticsChartsProps {
   onExportPDF?: (cycle: AnalyticsCycle) => void;
 }
 
+function scrollPageToTop() {
+  const mobileContent = document.querySelector<HTMLElement>('.mobile-app-content');
+  if (mobileContent) mobileContent.scrollTo({ top: 0, behavior: 'smooth' });
+  else window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function MetricCard({
   label, value, detail, tone, icon,
 }: {
@@ -695,7 +701,7 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
                   <div key={summary.id} className="rounded-xl border border-zinc-800 bg-[#18181b] p-3 text-xs">
                     <button
                       type="button"
-                      onClick={() => { setSelectedCycleId(summary.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                      onClick={() => { setSelectedCycleId(summary.id); scrollPageToTop(); }}
                       className="font-bold text-indigo-300 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                     >{cycleLabel(summary.cycleStart, summary.cycleEnd)}</button>
                     <div className="mt-3 grid grid-cols-2 gap-2">
@@ -730,7 +736,7 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
                         <td className="px-3 py-3">
                           <button
                             type="button"
-                            onClick={() => { setSelectedCycleId(summary.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                            onClick={() => { setSelectedCycleId(summary.id); scrollPageToTop(); }}
                             className="font-semibold text-white underline decoration-indigo-500/40 underline-offset-4 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                           >{cycleLabel(summary.cycleStart, summary.cycleEnd)}</button>
                         </td>

@@ -79,7 +79,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     theme: resolvedTheme === 'light' ? 'dark' : 'light',
   });
   return (
-    <header className={`${isNativeApp ? 'mobile-safe-header ' : ''}sticky top-0 z-30 bg-[#09090b]/90 backdrop-blur-md text-zinc-100 pt-2 sm:pt-4 px-2 sm:px-6 lg:px-8`}>
+    <header className={`${isNativeApp ? 'mobile-safe-header relative shrink-0 ' : 'sticky top-0 '}z-30 bg-[#09090b]/90 backdrop-blur-md text-zinc-100 pt-2 sm:pt-4 px-2 sm:px-6 lg:px-8`}>
       <div className="max-w-7xl mx-auto">
         <div className="bg-[#121214] border border-zinc-800 rounded-2xl sm:rounded-3xl px-3 sm:px-6 py-2.5 sm:py-3.5 shadow-xl flex items-center justify-between">
           {/* Logo & Brand */}

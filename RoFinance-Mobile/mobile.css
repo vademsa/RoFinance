@@ -1,19 +1,43 @@
 @import '../src/index.css';
 @source '../src';
 
+html,
+body {
+  overscroll-behavior: none;
+}
+
+#root:has(.mobile-app-shell) {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.mobile-app-shell {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .mobile-safe-header {
   padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+.mobile-app-content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.mobile-app-content::-webkit-scrollbar {
+  display: none;
 }
 
 .mobile-bottom-nav {
   padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }
 
-main {
-  padding-bottom: calc(6.5rem + env(safe-area-inset-bottom)) !important;
-}
-
-footer {
+.mobile-app-content {
   padding-bottom: calc(6.5rem + env(safe-area-inset-bottom)) !important;
 }
 

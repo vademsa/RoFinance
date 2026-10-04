@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useState, useEffect, useRef } from 'react';
+import React, { lazy, Suspense, useCallback, useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Jar, Transaction, BankAccount, CryptoAsset, DebtItem, JarPlanSnapshot, MonthlyCycleSummary, SafetyInvestment, TransactionCategory } from './types';
 import { CalendarCheck2, LayoutTemplate, Sparkles, X } from 'lucide-react';
 import {
@@ -171,6 +171,16 @@ export default function App() {
   setRuntimePreferences(preferences);
 
   const [activeTab, setActiveTab] = useState<'jars' | 'transactions' | 'crypto' | 'analytics'>('jars');
+  const mobileContentRef = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    if (isNativeApp) mobileContentRef.current?.scrollTo(0, 0);
+  }, [activeTab]);
+
+  const selectTab = (tab: typeof activeTab) => {
+    if (isNativeApp && tab === activeTab) mobileContentRef.current?.scrollTo(0, 0);
+    setActiveTab(tab);
+  };
 
   // Modals state
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
@@ -1083,15 +1093,26 @@ export default function App() {
   };
 
   const jarRegistry = [...jars, ...archivedJars];
+  const appFooter = (
+    <footer className="bg-[#09090b] text-zinc-500 py-6 text-center text-xs border-t border-zinc-800/80 mt-12">
+      <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <p>© 2026 RoFinance. Quản Lý Hũ Tài Chính & Danh Mục Đầu Tư.</p>
+        <div className="flex items-center gap-3 text-[11px]">
+          <a href="/privacy-policy" className="text-zinc-500 hover:text-indigo-400">Quyền riêng tư</a>
+          <a href="/terms-of-service" className="text-zinc-500 hover:text-indigo-400">Điều khoản</a>
+        </div>
+      </div>
+    </footer>
+  );
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-100 font-sans antialiased flex flex-col">
+    <div className={`${isNativeApp ? 'mobile-app-shell' : 'min-h-screen'} bg-[#09090b] text-zinc-100 font-sans antialiased flex flex-col`}>
       <TranslationLayer language={preferences.language} currency={preferences.currency} />
       {dataError && <div className="bg-rose-950 text-rose-200 text-xs text-center p-2">{dataError}</div>}
       {/* Header Bar */}
       <Navbar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={selectTab}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         user={user}
         preferences={preferences}
@@ -1099,7 +1120,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="mx-auto w-full max-w-7xl flex-1 px-2 pb-20 pt-3 sm:px-6 sm:pb-24 sm:pt-6 lg:px-8">
+      <main ref={mobileContentRef} className={`${isNativeApp ? 'mobile-app-content ' : ''}mx-auto w-full max-w-7xl flex-1 px-2 pb-20 pt-3 sm:px-6 sm:pb-24 sm:pt-6 lg:px-8`}>
         {rolloverNotice && (
           <div className="mb-4 flex items-start gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-emerald-50 shadow-lg shadow-emerald-950/10" role="status">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
@@ -1241,6 +1262,7 @@ export default function App() {
           />
           </Suspense>
         )}
+        {isNativeApp && appFooter}
       </main>
 
       {!isAIAdvisorOpen && <button
@@ -1351,16 +1373,7 @@ export default function App() {
         onLogoutWarning={setLogoutWarning}
       />
 
-      {/* Simple Footer */}
-      <footer className="bg-[#09090b] text-zinc-500 py-6 text-center text-xs border-t border-zinc-800/80 mt-12">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p>© 2026 RoFinance. Quản Lý Hũ Tài Chính & Danh Mục Đầu Tư.</p>
-          <div className="flex items-center gap-3 text-[11px]">
-            <a href="/privacy-policy" className="text-zinc-500 hover:text-indigo-400">Quyền riêng tư</a>
-            <a href="/terms-of-service" className="text-zinc-500 hover:text-indigo-400">Điều khoản</a>
-          </div>
-        </div>
-      </footer>
+      {!isNativeApp && appFooter}
     </div>
   );
 }
