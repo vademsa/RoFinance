@@ -12,6 +12,7 @@
     "build": "npm run build:web && npm run build:api && npm run build:web-server",
     "build:web": "vite build",
     "build:mobile": "npm run build --workspace rofinance-mobile",
+    "icons:mobile": "node scripts/generate-mobile-assets.mjs",
     "sync:mobile": "npm run sync --workspace rofinance-mobile",
     "build:api": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/api.cjs",
     "build:web-server": "esbuild webServer.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/web-server.cjs",

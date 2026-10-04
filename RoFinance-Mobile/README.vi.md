@@ -40,4 +40,6 @@ npm run sync:mobile
 
 Mở `RoFinance-Mobile/android/` bằng Android Studio hoặc `RoFinance-Mobile/ios/App/App.xcodeproj` bằng Xcode, rồi build và thử trên thiết bị thật. Từ thư mục gốc, chạy `npm run sync:mobile` sau khi sửa frontend. Không đặt `server.url` của Capacitor trỏ tới backend production: ứng dụng đóng gói UI của chính nó và gọi API backend riêng.
 
+Icon ứng dụng và màn hình khởi động Android/iOS được tạo từ `public/favicon.svg`. Sau khi đổi logo, chạy `npm run icons:mobile`, tiếp theo `npm run sync:mobile` và build lại bản native. Nếu launcher còn giữ icon cũ, hãy cài lại ứng dụng.
+
 Giao diện và quy tắc chung chỉ sửa một lần trong `../src/` và `../shared/`, rồi build lại hai bản. Chỉ hành vi riêng mobile mới nằm trong thư mục này. Dependency được quản lý bởi npm workspace ở thư mục gốc, không cài thêm `node_modules` thứ hai.

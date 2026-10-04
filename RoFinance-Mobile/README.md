@@ -40,4 +40,6 @@ npm run sync:mobile
 
 Open `RoFinance-Mobile/android/` in Android Studio or `RoFinance-Mobile/ios/App/App.xcodeproj` in Xcode, then build and test on real devices. From the repository root, run `npm run sync:mobile` after frontend changes. Never set Capacitor `server.url` to the production backend: the app bundles its own UI and calls the backend API separately.
 
+The Android/iOS launcher icons and splash screens are generated from `public/favicon.svg`. After changing the brand mark, run `npm run icons:mobile`, then `npm run sync:mobile` and rebuild the native apps. Reinstall the app if a launcher caches its old icon.
+
 Change common UI and business rules once in `../src/` and `../shared/`; both builds pick them up. Only mobile-specific behavior belongs in this folder. Dependencies are managed by the root npm workspace rather than a second `node_modules` installation.
