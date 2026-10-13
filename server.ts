@@ -1,4 +1,7 @@
 import express from 'express';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { createReleaseReader } from './server/appRelease';
 import { GoogleGenAI } from '@google/genai';
 import { rateLimit } from 'express-rate-limit';
 import {
@@ -22,6 +25,13 @@ import { validateAndNormalizeUserData } from './server/dataValidation';
 import { findBankByCode } from './shared/banks';
 import mobileRoutes from './server/mobileRoutes';
 import { getMobileJwtConfig } from './server/mobileJwt';
+import { CharacterStore, syncCharacterForSavedFinance } from './server/characterStore';
+import { createCharacterRouter } from './server/characterRoutes';
+import { CommunityStore } from './server/communityStore';
+import { createCommunityRouter } from './server/communityRoutes';
+import { createAdminRouter, createAdminPageHandler, earlyAdminHeaders, adminErrorBoundary } from './server/adminRoutes';
+import { AdminStore } from './server/adminStore';
+import { isAdminPagePath } from './shared/admin';
 import {
   buildAppleAuthorizationUrl,
   buildGoogleAuthorizationUrl,
@@ -42,6 +52,7 @@ async function startServer() {
   getMobileJwtConfig();
   // The web proxy preserves the trusted ingress forwarding headers unchanged.
   app.set('trust proxy', 1);
+  app.use(earlyAdminHeaders);
   app.use('/api/auth/profile', express.json({ limit: '1500kb' }));
   app.use('/api/auth/profile', (error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (error && typeof error === 'object' && 'type' in error && error.type === 'entity.too.large') {
@@ -57,14 +68,14 @@ async function startServer() {
       .split(',').map((origin) => origin.trim()).filter(Boolean)
   );
   app.use('/api', (req, res, next) => {
-    res.set('Cache-Control', 'no-store');
+    res.set('Cache-Control', isAdminPagePath(req.path) ? 'private, no-store' : 'no-store');
     res.vary('Origin');
     const origin = req.get('origin');
     if (origin && mobileOrigins.has(origin)) {
       res.set('Access-Control-Allow-Origin', origin);
-      res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, If-Match');
+      res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, If-Match, X-RoFinance-Owner');
       res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-      if (req.method === 'OPTIONS') {
+      if (req.method === 'OPTIONS' && !isAdminPagePath(req.path)) {
         res.status(204).end();
         return;
       }
@@ -72,6 +83,13 @@ async function startServer() {
     next();
   });
   app.use(createSessionMiddleware());
+
+  const readRelease = createReleaseReader(readFileSync(process.argv[1], 'utf8'), path.join(process.cwd(), 'dist/web'));
+  app.use(createAdminPageHandler(pool, requireAuth, path.join(process.cwd(), 'dist/web')));
+  app.get('/api/app-version', (_req, res) => {
+    try { res.json(readRelease()); }
+    catch { res.status(503).json({ error: 'APP_VERSION_UNAVAILABLE' }); }
+  });
 
   // Reject cross-site state-changing requests in addition to SameSite cookies.
   app.use('/api', (req, res, next) => {
@@ -97,6 +115,11 @@ async function startServer() {
     next();
   });
 
+  // Keep admin behind both authentication/authorization and the existing
+  // cross-site write guard, even if future dashboard mutations are introduced.
+  app.use('/api/admin', createAdminRouter(pool, requireAuth, readRelease, new AdminStore(pool)));
+  app.use(adminErrorBoundary);
+
   // Initialize Gemini AI client if API key is present
   const getGeminiClient = async () => {
     const storedKey = await getConfigValue<string>('gemini_api_key');
@@ -120,6 +143,8 @@ async function startServer() {
   });
 
   app.use('/api/mobile', mobileRoutes);
+  app.use('/api/character', createCharacterRouter(new CharacterStore(pool), requireAuth));
+  app.use('/api/community-plans', createCommunityRouter(new CommunityStore(pool), requireAuth));
 
   type CryptoMarketResult = {
     exchange: 'Binance' | 'OKX' | 'Bybit';
@@ -592,9 +617,10 @@ async function startServer() {
          RETURNING revision`,
         [req.authUserId, JSON.stringify(validation.value)]
       );
+      const dailyRewardGranted = await syncCharacterForSavedFinance(db, req.authUserId!, validation.value, undefined, existingData);
       await db.query('COMMIT');
       res.set('ETag', `"${saved.rows[0].revision}"`);
-      res.json({ success: true, revision: saved.rows[0].revision });
+      res.json({ success: true, revision: saved.rows[0].revision, dailyRewardGranted });
     } catch (error) {
       await db.query('ROLLBACK');
       throw error;

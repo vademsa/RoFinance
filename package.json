@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "workspaces": ["RoFinance-Mobile"],
+  "workspaces": [
+    "RoFinance-Mobile"
+  ],
   "scripts": {
     "dev": "vite",
     "dev:web": "vite",
@@ -13,6 +15,8 @@
     "build:web": "vite build",
     "build:mobile": "npm run build --workspace rofinance-mobile",
     "icons:mobile": "node scripts/generate-mobile-assets.mjs",
+    "icons:brand": "node scripts/generate-mobile-assets.mjs",
+    "test:brand": "node --test scripts/generate-mobile-assets.test.mjs",
     "sync:mobile": "npm run sync --workspace rofinance-mobile",
     "build:api": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/api.cjs",
     "build:web-server": "esbuild webServer.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/web-server.cjs",
@@ -21,7 +25,8 @@
     "start:api": "node dist/api.cjs",
     "clean": "rm -rf dist server.cjs",
     "lint": "tsc --noEmit",
-    "test:logic": "tsx --test src/utils/*.test.ts server/*.test.ts",
+    "test:logic": "tsx --test src/utils/*.test.ts src/utils/*.test.tsx server/*.test.ts",
+    "test:character:ui": "playwright test --config playwright.character.config.ts",
     "lint:mobile": "npm run lint --workspace rofinance-mobile"
   },
   "dependencies": {
@@ -50,6 +55,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/connect-pg-simple": "^7.0.3",
     "@types/express": "^4.17.21",
     "@types/express-session": "^1.18.2",

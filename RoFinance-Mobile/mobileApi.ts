@@ -213,6 +213,7 @@ export const authApi = {
 };
 
 export const dataApi = {
+  revision: (ownerId: string) => dataRevisions.get(ownerId),
   load: async (ownerId: string) => {
     const result = await request<{ data: Partial<LocalAppData> | null; revision: string }>('/api/data');
     if (typeof result.revision !== 'string' || !/^\d+$/.test(result.revision)) {
@@ -224,7 +225,7 @@ export const dataApi = {
   save: async (ownerId: string, data: Partial<LocalAppData>) => {
     const revision = dataRevisions.get(ownerId);
     if (revision === undefined) throw new Error('Cần tải dữ liệu từ server trước khi lưu');
-    const result = await request<{ success: true; revision: string }>('/api/data', {
+    const result = await request<{ success: true; revision: string; dailyRewardGranted?: boolean }>('/api/data', {
       method: 'PUT',
       headers: { 'If-Match': `"${revision}"` },
       body: JSON.stringify(data),

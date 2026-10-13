@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Search, Trash2, PlusCircle, Landmark, RefreshCw, WalletCards, CalendarRange, Pencil } from 'lucide-react';
+import { Search, Trash2, PlusCircle, Landmark, RefreshCw, WalletCards, CalendarRange, Pencil, FileUp, ListPlus } from 'lucide-react';
 import { BankAccount, Jar, MonthlyCycleSummary, Transaction, TransactionCategory } from '../types';
 import { formatVND, formatDateVI } from '../utils/formatters';
 import { CurrencyInput } from './CurrencyInput';
 import {
   deduplicateBankAccounts,
-  getDerivedBankBalance,
+  getBankAccountBalance,
   getJarsLinkedToBankAccount,
 } from '../utils/bankAccounts';
 import { CategoryIcon } from './CategoryIcon';
@@ -22,6 +22,8 @@ import {
 } from '../utils/monthlyCycle';
 import { groupTransactionsByDate } from '../utils/transactionHistory';
 import { getRuntimePreferences } from '../lib/preferences';
+import { getHistoricalSummaryForDate } from '../utils/historicalBalances';
+import { isBankOnlyIncome } from '../../shared/transactions';
 
 const formatTransactionGroupDate = (dateKey: string) => {
   const date = parseLocalDate(dateKey);
@@ -43,7 +45,10 @@ interface TransactionListProps {
   customCategories: TransactionCategory[];
   onDeleteTransaction: (id: string) => void;
   onEditTransaction: (transaction: Transaction) => void;
-  onOpenTransactionModal: () => void;
+  onOpenTransactionModal: (initialDate?: string) => void;
+  onOpenStatementImport: () => void;
+  onOpenBulkEntry: () => void;
+  onOpenHistoricalBalance: (date: string) => void;
   onOpenBankAccountsModal?: () => void;
   isAmountsHidden?: boolean;
   bankAccounts: BankAccount[];
@@ -60,6 +65,9 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   onDeleteTransaction,
   onEditTransaction,
   onOpenTransactionModal,
+  onOpenStatementImport,
+  onOpenBulkEntry,
+  onOpenHistoricalBalance,
   onOpenBankAccountsModal,
   isAmountsHidden = false,
   bankAccounts,
@@ -98,10 +106,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   const currentCycleStart = getFinancialCycleStart(new Date(), resetDay);
   const currentCycleEnd = getNextFinancialCycleStart(currentCycleStart, resetDay);
   const previousCycleStart = getPreviousFinancialCycleStart(new Date(), resetDay);
-  const previousSummary = monthlySummaries.find(
-    (summary) => summary.cycleStart === toLocalDateKey(previousCycleStart),
-  );
-  const backdatableJarIds = getBackdatableJarIds(previousSummary);
   const selectedSummaryId = selectedCycleId.startsWith('CYCLE:')
     ? selectedCycleId.slice('CYCLE:'.length)
     : selectedCycleId;
@@ -160,7 +164,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 Số Dư Tài Khoản Hiện Tại
               </h2>
             </div>
-            <p className="mt-1 text-[10px] text-zinc-500">Tổng tiền khả dụng từ các hũ cùng liên kết.</p>
+            <p className="mt-1 text-[10px] text-zinc-500">{isEnglish ? 'Available balances include linked jars and money not allocated to jars.' : 'Số dư khả dụng gồm tiền trong hũ liên kết và tiền chưa phân bổ.'}</p>
           </div>
           {onOpenBankAccountsModal && <button
             type="button"
@@ -177,7 +181,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
             const linkedJars = getJarsLinkedToBankAccount(activeJars, account);
             const isDerivedFromJars = linkedJars.length > 0;
             const displayedBalance = isDerivedFromJars
-              ? getDerivedBankBalance(activeJars, account)
+              ? getBankAccountBalance(activeJars, account, transactions)
               : account.balance;
             return (
             <article key={account.id} className="rounded-xl border border-zinc-800 bg-[#18181b] px-2.5 py-2">
@@ -222,13 +226,15 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={onOpenTransactionModal}
-          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all flex items-center space-x-1.5 self-start sm:self-auto"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>Ghi Nhận Giao Dịch Mới</span>
-        </button>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <button type="button" onClick={() => onOpenHistoricalBalance(selectedSummary?.cycleStart || toLocalDateKey(previousCycleStart))}
+            className="flex cursor-pointer items-center gap-1.5 rounded-xl border border-amber-500/40 px-3 py-2.5 text-xs font-bold text-amber-200 transition-colors hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">
+            <CalendarRange className="h-4 w-4" />{isEnglish ? 'Past jar balance' : 'Số dư hũ quá khứ'}
+          </button>
+          <button onClick={onOpenStatementImport} className="flex items-center gap-1.5 rounded-xl border border-zinc-600 px-3 py-2.5 text-xs font-bold text-zinc-200 hover:border-indigo-400"><FileUp className="h-4 w-4"/>{isEnglish ? 'Import statement' : 'Nhập sao kê'}</button>
+          <button onClick={onOpenBulkEntry} className="flex items-center gap-1.5 rounded-xl border border-zinc-600 px-3 py-2.5 text-xs font-bold text-zinc-200 hover:border-indigo-400"><ListPlus className="h-4 w-4"/>{isEnglish ? 'Bulk entry' : 'Ghi hàng loạt'}</button>
+          <button onClick={() => onOpenTransactionModal(selectedSummary?.cycleStart)} className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500"><PlusCircle className="h-4 w-4"/>{isEnglish ? 'New transaction' : 'Ghi Nhận Giao Dịch Mới'}</button>
+        </div>
       </div>
 
       {/* Filters Bar */}
@@ -375,21 +381,18 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     currentCycleStart,
                     currentCycleEnd,
                   );
-                  const referencesArchivedJar = !activeJarIds.includes(tx.jarId) ||
+                  const referencesArchivedJar = (!isBankOnlyIncome(tx) && !activeJarIds.includes(tx.jarId)) ||
                     Boolean(tx.transferToJarId && !activeJarIds.includes(tx.transferToJarId)) ||
                     Boolean(tx.allocations?.some((allocation) => !activeJarIds.includes(allocation.jarId)));
-                  const isPreviousCycleTransaction = isDateInCycle(
-                    tx.date,
-                    previousCycleStart,
-                    currentCycleStart,
-                  );
+                  const isPreviousCycleTransaction = tx.date < toLocalDateKey(currentCycleStart);
+                  const historicalIds = getBackdatableJarIds(getHistoricalSummaryForDate(monthlySummaries, tx.date, resetDay));
                   const hasValidPreviousSnapshot = tx.type === 'expense'
-                    ? backdatableJarIds.has(tx.jarId)
+                    ? historicalIds.has(tx.jarId)
                     : tx.type === 'income' && Boolean(tx.allocations?.length) &&
-                      tx.allocations!.every((allocation) => backdatableJarIds.has(allocation.jarId));
+                      tx.allocations!.every((allocation) => historicalIds.has(allocation.jarId));
                   const canModify = !referencesArchivedJar && (
                     isCurrentCycleTransaction ||
-                    (isPreviousCycleTransaction && tx.type !== 'transfer' && hasValidPreviousSnapshot)
+                    (isPreviousCycleTransaction && tx.type !== 'transfer' && (isBankOnlyIncome(tx) || hasValidPreviousSnapshot))
                   );
                   const categoryDefinition = tx.type === 'transfer'
                     ? undefined
@@ -416,7 +419,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                         {tx.counterpartyName && <div className="mt-1 text-[10px] text-zinc-500">Đối tác: <span data-no-translate="true">{tx.counterpartyName}</span></div>}
                       </td>
                       <td className="p-3.5">
-                        {isIncome && tx.allocations?.length ? (
+                        {isBankOnlyIncome(tx) ? <span className="text-xs text-emerald-400">{isEnglish ? 'Not allocated' : 'Không phân bổ'}</span> : isIncome && tx.allocations?.length ? (
                           <div className="flex flex-wrap gap-1">
                             {tx.allocations.map((allocation) => {
                               const allocatedJar = jars.find((item) => item.id === allocation.jarId);
@@ -451,7 +454,9 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                       <td className="p-3.5 font-medium text-zinc-300">
                         {isTransfer && (tx.sourceBankCode || tx.destinationBankCode)
                           ? `${tx.sourceBankCode || '?'} → ${tx.destinationBankCode || '?'}`
-                          : tx.bankName || jar?.bankName || '-'}
+                          : isBankOnlyIncome(tx)
+                            ? <span data-no-translate="true">{uniqueAccounts.find((account) => account.id === tx.bankAccountId)?.bankName || tx.bankName} · {uniqueAccounts.find((account) => account.id === tx.bankAccountId)?.accountNumber}</span>
+                            : tx.bankName || jar?.bankName || '-'}
                       </td>
                       <td className="p-3.5 text-right font-black font-mono text-sm">
                         <span className={isIncome ? 'text-emerald-400' : isTransfer ? 'text-sky-400' : 'text-zinc-100'}>

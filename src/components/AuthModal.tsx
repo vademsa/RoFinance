@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { BrandLogo } from './BrandLogo';
 import {
   Apple,
   X,
@@ -12,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { authApi, supportsNativeGoogle, supportsOAuth, type AuthUser } from '@platform';
+import { passwordPolicyError, PASSWORD_REQUIREMENTS_VI } from '../../shared/passwordPolicy';
 
 const MAX_SOURCE_AVATAR_BYTES = 5 * 1024 * 1024;
 const MAX_SAVED_AVATAR_BYTES = 1024 * 1024;
@@ -138,6 +140,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
+    if (isSignUp) {
+      const problem = passwordPolicyError(password);
+      if (problem) { setErrorMsg(problem); return; }
+    }
     setIsLoading(true);
 
     try {
@@ -260,8 +266,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <X className="w-5 h-5" />
           </button>
           <div className="flex items-center space-x-3">
-            <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 text-indigo-400">
-              <Lock className="w-6 h-6" />
+            <div className="shrink-0">
+              <BrandLogo decorative className="h-12 w-12"/>
             </div>
             <div>
               <h2 className="text-lg font-black text-white tracking-tight">
@@ -469,9 +475,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  minLength={8}
+                  minLength={isSignUp ? 8 : undefined}
+                  maxLength={isSignUp ? 128 : undefined}
+                  autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                  aria-describedby={isSignUp ? 'registration-password-policy' : undefined}
                   className="w-full px-3.5 py-2.5 bg-[#121214] border border-zinc-800 rounded-xl text-white text-xs focus:outline-none focus:border-indigo-500"
                 />
+                {isSignUp && <p id="registration-password-policy" className="text-xs text-zinc-400 leading-relaxed">{PASSWORD_REQUIREMENTS_VI}</p>}
               </div>
 
               <button

@@ -4,6 +4,7 @@ import {
   findPaymentMethodByName,
 } from '../shared/banks';
 import { CUSTOM_JAR_PLAN_ID, findJarPlan, JAR_PLAN_DEFINITIONS } from '../src/constants/jarPlans';
+import { isBankOnlyIncome } from '../shared/transactions';
 
 type DataRecord = Record<string, unknown>;
 
@@ -155,6 +156,11 @@ function validateBankAccounts(raw: unknown): { value?: DataRecord[]; error?: str
     if (!Number.isFinite(balance) || balance < 0 || balance > 1_000_000_000_000_000) {
       return { error: 'Số dư tài khoản không hợp lệ' };
     }
+    if (rawAccount.unallocatedOpeningBalance !== undefined && (
+      typeof rawAccount.unallocatedOpeningBalance !== 'number' ||
+      !Number.isFinite(rawAccount.unallocatedOpeningBalance) ||
+      Math.abs(rawAccount.unallocatedOpeningBalance) > 1_000_000_000_000_000
+    )) return { error: 'Số dư chưa phân bổ của tài khoản không hợp lệ' };
     value.push({
       ...rawAccount,
       bankCode: String(rawAccount.bankCode).trim().toUpperCase(),
@@ -172,6 +178,7 @@ function validateTransactions(
   jars: DataRecord[],
   activeJarIds: Set<string>,
   existingTransactions: unknown,
+  bankAccounts: DataRecord[],
 ): { value?: DataRecord[]; error?: string } {
   if (!Array.isArray(raw) || raw.length > 50_000) return { error: 'Danh sách giao dịch không hợp lệ' };
   const jarById = new Map(jars.map((jar) => [jar.id as string, jar]));
@@ -181,6 +188,7 @@ function validateTransactions(
       : [],
   );
   const ids = new Set<string>();
+  const bankTransactionIds = new Set<string>();
   const value: DataRecord[] = [];
   for (const rawTransaction of raw) {
     if (!isRecord(rawTransaction)) return { error: 'Dữ liệu giao dịch không hợp lệ' };
@@ -188,12 +196,41 @@ function validateTransactions(
       return { error: 'Mã giao dịch không hợp lệ hoặc bị trùng' };
     }
     ids.add(rawTransaction.id as string);
+    if (rawTransaction.bankTransactionId !== undefined) {
+      if (!hasSafeText(rawTransaction.bankTransactionId, 100) ||
+        bankTransactionIds.has(rawTransaction.bankTransactionId as string)) {
+        return { error: 'Mã bút toán ngân hàng không hợp lệ hoặc bị trùng' };
+      }
+      bankTransactionIds.add(rawTransaction.bankTransactionId as string);
+    }
     if (!isOneOf(rawTransaction.type, ['income', 'expense', 'transfer'])) {
       return { error: 'Loại giao dịch không hợp lệ' };
     }
     const amount = Number(rawTransaction.amount);
     if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000_000_000) {
       return { error: 'Số tiền giao dịch không hợp lệ' };
+    }
+    if (rawTransaction.bankAccountId !== undefined) {
+      const account = bankAccounts.find((item) => item.id === rawTransaction.bankAccountId);
+      if (!isBankOnlyIncome(rawTransaction) || !hasSafeText(rawTransaction.bankAccountId, 100) || !account) {
+        return { error: 'Tài khoản nhận tiền không thuộc danh sách tài khoản đã lưu' };
+      }
+      if ((rawTransaction.allocations !== undefined && (!Array.isArray(rawTransaction.allocations) || rawTransaction.allocations.length > 0)) ||
+        rawTransaction.transferToJarId !== undefined) return { error: 'Khoản thu tài khoản không được phân bổ hoặc chuyển vào hũ' };
+      if (!hasSafeText(rawTransaction.category, 100) || !hasSafeText(rawTransaction.description, 500) || !isDateKey(rawTransaction.date)) {
+        return { error: 'Ngày, danh mục hoặc ghi chú khoản thu không hợp lệ' };
+      }
+      if (rawTransaction.paymentMethodCode !== undefined && !findPaymentMethodByCode(rawTransaction.paymentMethodCode)) {
+        return { error: 'Phương thức hoặc ngân hàng của giao dịch không hợp lệ' };
+      }
+      const method = findPaymentMethodByCode(account.bankCode)!;
+      value.push({ id: rawTransaction.id, type: 'income', amount, jarId: '', bankAccountId: account.id,
+        category: rawTransaction.category, categoryId: rawTransaction.categoryId, categoryIcon: rawTransaction.categoryIcon,
+        date: rawTransaction.date, description: rawTransaction.description,
+        paymentMethodCode: method.code, bankName: method.shortName,
+        ...(rawTransaction.bankTransactionId ? { bankTransactionId: rawTransaction.bankTransactionId, sourceAccountNumber: account.accountNumber } : {}),
+      });
+      continue;
     }
     if (!hasSafeText(rawTransaction.jarId, 100) || !jarById.has(rawTransaction.jarId as string)) {
       return { error: 'Hũ của giao dịch không thuộc dữ liệu tài khoản hiện tại' };
@@ -225,6 +262,12 @@ function validateTransactions(
       if (!activeJarIds.has(destinationJar.id as string) &&
         (!existingTransaction || JSON.stringify(existingTransaction) !== JSON.stringify(rawTransaction))) {
         return { error: 'Không thể chuyển tiền vào hũ đã lưu trữ' };
+      }
+      // A jar's bank account can be corrected later. Keep the bank details of an
+      // unchanged historical transfer instead of rewriting them from today's jars.
+      if (existingTransaction && JSON.stringify(existingTransaction) === JSON.stringify(rawTransaction)) {
+        value.push({ ...rawTransaction, amount });
+        continue;
       }
       const sourceCode = String(sourceJar.bankCode || '');
       const sourceMethod = findPaymentMethodByCode(sourceCode || 'CASH');
@@ -273,7 +316,7 @@ function validateTransactions(
   );
   for (const existing of existingById.values()) {
     const referencesArchivedJar =
-      !activeJarIds.has(existing.jarId as string) ||
+      (!isBankOnlyIncome(existing) && !activeJarIds.has(existing.jarId as string)) ||
       (typeof existing.transferToJarId === 'string' && !activeJarIds.has(existing.transferToJarId));
     if (referencesArchivedJar) {
       const submitted = rawById.get(existing.id);
@@ -384,6 +427,10 @@ function validateOtherOptionFields(data: DataRecord, jars: DataRecord[]) {
       if (!isRecord(summary) || !hasSafeText(summary.id, 100) ||
         !isDateKey(summary.cycleStart) || !isDateKey(summary.cycleEnd) ||
         summary.cycleStart > summary.cycleEnd) return true;
+      if (summary.unallocatedIncome !== undefined && (
+        typeof summary.unallocatedIncome !== 'number' || !Number.isFinite(summary.unallocatedIncome) ||
+        summary.unallocatedIncome < 0 || summary.unallocatedIncome > Number(summary.income)
+      )) return true;
       if (summary.jarBreakdown === undefined) return false;
       return !Array.isArray(summary.jarBreakdown) || summary.jarBreakdown.some((item) =>
         !isRecord(item) || !hasSafeText(item.jarId, 100) || !hasSafeText(item.jarCode, 32) ||
@@ -392,6 +439,9 @@ function validateOtherOptionFields(data: DataRecord, jars: DataRecord[]) {
         (item.transferredIn !== undefined && !validateCarryovers(item.transferredIn)) ||
         (item.transferredInAmount !== undefined &&
           (typeof item.transferredInAmount !== 'number' || !Number.isFinite(item.transferredInAmount) || item.transferredInAmount < 0)) ||
+        (item.manualOpeningBalance !== undefined &&
+          (typeof item.manualOpeningBalance !== 'number' || !Number.isSafeInteger(item.manualOpeningBalance) ||
+            item.manualOpeningBalance < 0 || item.manualOpeningBalance > 1_000_000_000_000_000)) ||
         (item.isArchived !== undefined && typeof item.isArchived !== 'boolean') ||
         !validateCarryovers(item.closingCarryovers)
       );
@@ -465,8 +515,15 @@ export function validateAndNormalizeUserData(
     allJars,
     activeJarIds,
     existingData.transactions,
+    accountsResult.value,
   );
   if (!transactionsResult.value) return { error: transactionsResult.error };
+  const bankIncomeTotals = new Map<unknown, number>();
+  for (const transaction of transactionsResult.value.filter(isBankOnlyIncome)) {
+    const total = (bankIncomeTotals.get(transaction.bankAccountId) || 0) + Number(transaction.amount);
+    if (!Number.isFinite(total) || total > 1_000_000_000_000_000) return { error: 'Tổng tiền nhận vào tài khoản vượt giới hạn hợp lệ' };
+    bankIncomeTotals.set(transaction.bankAccountId, total);
+  }
   result.transactions = transactionsResult.value;
   return { value: result };
 }

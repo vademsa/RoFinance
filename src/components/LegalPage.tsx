@@ -1,5 +1,6 @@
 import React from 'react';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
 
 type LegalPageType = 'privacy' | 'terms';
 
@@ -22,7 +23,7 @@ export const LegalPage: React.FC<LegalPageProps> = ({ type }) => {
       <header className="border-b border-zinc-800 bg-[#121214]">
         <div className="max-w-3xl mx-auto px-5 py-5 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2 font-black text-white">
-            <ShieldCheck className="w-5 h-5 text-indigo-400" />
+            <BrandLogo decorative className="h-9 w-9"/>
             RoFinance
           </a>
           <a href="/" className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white">

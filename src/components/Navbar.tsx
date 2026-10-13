@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { BrandLogo } from './BrandLogo';
 import {
   PieChart,
   Coins,
@@ -10,6 +11,7 @@ import {
   X,
   Wallet,
   ReceiptText,
+  Smile,
 } from 'lucide-react';
 import type { AppPreferences } from '../lib/preferences';
 import { isNativeApp, type AuthUser } from '@platform';
@@ -21,8 +23,8 @@ import {
 } from '../utils/monthlyCycle';
 
 interface NavbarProps {
-  activeTab: 'jars' | 'transactions' | 'crypto' | 'analytics';
-  setActiveTab: (tab: 'jars' | 'transactions' | 'crypto' | 'analytics') => void;
+  activeTab: 'jars' | 'transactions' | 'crypto' | 'analytics' | 'character';
+  setActiveTab: (tab: 'jars' | 'transactions' | 'crypto' | 'analytics' | 'character') => void;
   onOpenAuthModal?: () => void;
   user?: AuthUser | null;
   preferences: AppPreferences;
@@ -83,15 +85,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto">
         <div className="bg-[#121214] border border-zinc-800 rounded-2xl sm:rounded-3xl px-3 sm:px-6 py-2.5 sm:py-3.5 shadow-xl flex items-center justify-between">
           {/* Logo & Brand */}
-          <div className="flex items-center space-x-3">
-            <img
-              src="/favicon.svg?v=1"
-              alt="RoFinance"
-              className="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-[14px] object-contain drop-shadow-[0_8px_16px_rgba(59,130,246,0.22)]"
-            />
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="font-extrabold text-lg tracking-tight text-white">RoFinance</span>
+          <div className="flex min-w-0 shrink items-center">
+            <BrandLogo className="h-10 w-10 shrink-0 min-[480px]:hidden"/>
+            <div className="hidden min-[480px]:block">
+              <div className="w-40 px-2 py-1 sm:w-44">
+                <BrandLogo variant="wordmark" className="h-9 w-full"/>
               </div>
               <p className="max-w-44 truncate text-xs text-zinc-400 hidden sm:block">
                 {user ? (
@@ -102,7 +100,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Navigation Tabs */}
-          {!isNativeApp && <div className="hidden md:flex items-center space-x-1 bg-[#1c1c20] p-1 rounded-2xl border border-zinc-800">
+          {!isNativeApp && <div className="hidden lg:flex items-center space-x-1 bg-[#1c1c20] p-1 rounded-2xl border border-zinc-800">
             <button
               onClick={() => setActiveTab('jars')}
               className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition-all ${
@@ -148,6 +146,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>}
 
           <div className="ml-auto flex shrink-0 items-center gap-2 md:ml-2">
+            {user && <button type="button" onClick={() => setActiveTab('character')}
+              aria-label={preferences.language === 'en' ? 'Character profile' : 'Hồ sơ nhân vật'}
+              className={`group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${activeTab === 'character' ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300' : 'border-zinc-800 bg-[#1c1c20] text-zinc-400 hover:text-white'}`}>
+              <Smile className="h-4 w-4"/><HeaderTooltip label={preferences.language === 'en' ? 'Character profile' : 'Hồ sơ nhân vật'}/>
+            </button>}
             <button
               type="button"
               onClick={toggleTheme}
@@ -192,7 +195,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{label}</span>
             </button>
           ))}
-        </nav>, document.body) : <div className="md:hidden grid grid-cols-4 gap-1 py-1.5 my-2 bg-[#121214] rounded-2xl border border-zinc-800 text-[10px] font-medium px-1.5">
+        </nav>, document.body) : <div className="lg:hidden grid grid-cols-4 gap-1 py-1.5 my-2 bg-[#121214] rounded-2xl border border-zinc-800 text-[10px] font-medium px-1.5">
           <button
             onClick={() => setActiveTab('jars')}
             className={`py-1.5 px-1 rounded-lg ${activeTab === 'jars' ? 'bg-indigo-600 text-white font-bold' : 'text-zinc-400'}`}
@@ -377,14 +380,16 @@ const SettingChoice = ({
 const HeaderTooltip = ({
   label,
   placement = 'bottom',
+  align = 'center',
 }: {
   label: string;
   placement?: 'top' | 'bottom';
+  align?: 'center' | 'end';
 }) => (
   <span
     role="tooltip"
     data-ui="header-tooltip"
-    className={`pointer-events-none absolute left-1/2 z-[90] -translate-x-1/2 whitespace-nowrap rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-[10px] font-semibold text-white opacity-0 shadow-xl transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100 ${placement === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}`}
+    className={`pointer-events-none absolute z-[90] w-max max-w-[min(240px,calc(100vw-2rem))] whitespace-normal break-words rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-center text-[10px] font-semibold text-white opacity-0 shadow-xl transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100 ${align === 'end' ? 'right-0' : 'left-1/2 -translate-x-1/2'} ${placement === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}`}
   >
     {label}
   </span>
@@ -434,7 +439,7 @@ const ProfileAction = ({
       <span className="hidden min-w-0 truncate text-[11px] font-bold text-zinc-200 xl:block">
           {user ? <span>{user.displayName}</span> : language === 'en' ? 'Account' : 'Tài khoản'}
       </span>
-      <HeaderTooltip label={label} />
+      <HeaderTooltip label={label} align="end" />
     </button>
   );
 };

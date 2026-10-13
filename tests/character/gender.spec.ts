@@ -1,0 +1,78 @@
+import { test, expect } from '@playwright/test';
+import { COSMETICS } from '../../shared/character';
+import { characterFixture } from './fixture';
+
+for (const language of ['en', 'vi'] as const) test(`gender selection saves and resets, styles filter owned/catalogue cards without losing items or changing finances (${language})`, async ({ page }, info) => {
+  const vi = language === 'vi';
+  const fixture = await characterFixture(page, { language, light: info.project.name === 'phone-light', ownedItemIds: COSMETICS.filter(item => item.gender).map(item => item.id) });
+  await page.goto('/'); await page.getByRole('button', { name: vi ? 'Hồ sơ nhân vật' : 'Character profile', exact: true }).click();
+  await expect(page.getByRole('radio', { name: vi ? 'Nam' : 'Male', exact: true })).toBeChecked();
+  await page.waitForTimeout(1200);
+  const before = structuredClone({ finance: fixture.finance(), owned: fixture.state().ownedItemIds, points: fixture.state().spentPoints, writes: fixture.writes() });
+  const female = page.getByRole('radio', { name: vi ? 'Nữ' : 'Female', exact: true });
+  const save = page.getByRole('button', { name: vi ? 'Lưu trang phục' : 'Save outfit', exact: true });
+  await female.check(); await expect(page.locator('.character-stage .pixel-character')).toHaveAttribute('data-gender', 'female');
+  for (const detail of ['female-base-hair', 'female-front-hair', 'female-face']) {
+    await expect(page.locator(`.character-stage [data-gender-detail="${detail}"]`)).toHaveCount(1);
+  }
+  expect(fixture.state().gender).toBe('male');
+  await page.getByRole('button', { name: vi ? 'Khôi phục' : 'Reset preview', exact: true }).click();
+  await expect(page.getByRole('radio', { name: vi ? 'Nam' : 'Male', exact: true })).toBeChecked();
+  await expect(page.locator('.character-stage [data-gender-detail="female-face"]')).toHaveCount(0);
+  await female.check(); await save.click(); await expect.poll(() => fixture.state().gender).toBe('female');
+  const wardrobe = page.locator('.character-owned-collection');
+  const styleName = vi ? 'Lọc trang phục Nam/Nữ' : 'Filter clothing style';
+  await wardrobe.getByLabel(styleName, { exact: true }).selectOption('female');
+  await expect(wardrobe.locator('.character-item')).toHaveCount(6);
+  const pager = wardrobe.getByRole('navigation'); await pager.getByRole('button', { name: vi ? 'Trang sau' : 'Next page', exact: true }).click();
+  await expect(wardrobe.locator('.character-item')).toHaveCount(1);
+  await wardrobe.getByLabel(styleName, { exact: true }).selectOption('male');
+  await expect(pager.getByRole('button', { name: vi ? 'Trang trước' : 'Previous page', exact: true })).toBeDisabled();
+  await wardrobe.getByLabel(styleName, { exact: true }).selectOption('female');
+  const dress = COSMETICS.find(item => item.id === 'shirt-female-classic')!;
+  await wardrobe.getByRole('button', { name: vi ? 'Áo' : 'Shirts', exact: true }).click();
+  await expect(wardrobe.getByLabel(styleName, { exact: true })).toHaveValue('female');
+  await expect(wardrobe.locator('.character-item')).toHaveCount(1);
+  await wardrobe.getByRole('button', { name: `${vi ? 'Thử' : 'Preview'} ${vi ? dress.vi : dress.en}`, exact: true }).click();
+  await save.click(); await expect.poll(() => fixture.state().equipped.shirt).toBe(dress.id);
+  await page.locator('.character-stage').evaluate(element => element.scrollIntoView({ block: 'center' }));
+  await page.locator('.character-stage').screenshot({ path: info.outputPath(`female-character-${language}.png`) });
+  await wardrobe.getByRole('button', { name: vi ? 'Xem phần thưởng' : 'View rewards', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel(styleName, { exact: true }).selectOption('male');
+  await expect(dialog.locator('.reward-prize')).toHaveCount(6);
+  expect(await dialog.locator('.reward-prize [data-cosmetic-id]').evaluateAll(items => items.every(item => item.getAttribute('data-cosmetic-id')?.includes('-male-classic')))).toBe(true);
+  await dialog.getByLabel(styleName, { exact: true }).selectOption('female');
+  await dialog.getByLabel(vi ? 'Lọc loại vật phẩm' : 'Filter item category', { exact: true }).selectOption('shirt');
+  await expect(dialog.locator('.reward-prize')).toHaveCount(1);
+  await expect(dialog.getByRole('heading', { name: vi ? dress.vi : dress.en, exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath(`clothing-filter-${language}.png`) });
+  await dialog.getByRole('button', { name: vi ? 'Đóng phần thưởng' : 'Close rewards', exact: true }).click();
+  await page.getByRole('button', { name: vi ? 'Quay lại' : 'Back', exact: true }).click();
+  await expect(page.locator('.character-companion-portrait .pixel-character')).toHaveAttribute('data-gender', 'female');
+  await expect(page.locator('.character-companion-portrait [data-gender-detail="female-face"]')).toHaveCount(1);
+  await page.getByRole('button', { name: vi ? 'Hồ sơ nhân vật' : 'Character profile', exact: true }).click();
+  await expect(female).toBeChecked();
+  expect(fixture.state().ownedItemIds).toEqual(before.owned); expect(fixture.state().spentPoints).toBe(before.points);
+  expect(fixture.finance()).toEqual(before.finance); expect(fixture.writes()).toBe(before.writes);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('female wardrobe previews do not grant or save unowned clothing; legacy/basic items remain unisex', async ({ page }, info) => {
+  const fixture = await characterFixture(page, { light: info.project.name === 'phone-light' });
+  await page.goto('/'); await page.getByRole('button', { name: 'Character profile', exact: true }).click();
+  await page.getByRole('radio', { name: 'Female', exact: true }).check();
+  await page.getByRole('button', { name: 'View rewards', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Filter clothing style', { exact: true }).selectOption('female');
+  await dialog.getByLabel('Filter item category', { exact: true }).selectOption('shirt');
+  const item = COSMETICS.find(item => item.id === 'shirt-female-classic')!;
+  await dialog.getByRole('button', { name: `Preview ${item.en}`, exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save outfit', exact: true })).toBeDisabled();
+  expect(fixture.state().ownedItemIds).not.toContain(item.id); expect(fixture.state().gender).toBe('male');
+  await page.getByRole('button', { name: 'Reset preview', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'Male', exact: true })).toBeChecked();
+  const wardrobe = page.locator('.character-owned-collection');
+  await wardrobe.getByLabel('Filter clothing style', { exact: true }).selectOption('unisex');
+  await expect(wardrobe.getByRole('button', { name: 'Preview Basic shirt', exact: true })).toBeVisible();
+});

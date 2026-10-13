@@ -53,6 +53,7 @@ export interface Transaction {
   type: 'income' | 'expense' | 'transfer';
   amount: number;
   jarId: string;
+  bankAccountId?: string; // Bank-only income uses an empty jarId and no allocations.
   category: string;
   categoryId?: string;
   categoryIcon?: CategoryIconKey;
@@ -79,6 +80,7 @@ export interface BankAccount {
   accountNumber: string;
   accountHolder: string;
   balance: number;
+  unallocatedOpeningBalance?: number; // Reconciled funds outside jars, before bank-only receipts.
   lastSynced: string;
   status: 'connected' | 'disconnected' | 'syncing';
   logoUrl?: string;
@@ -105,6 +107,7 @@ export interface MonthlyCycleSummary {
   cycleStart: string;
   cycleEnd: string;
   income: number;
+  unallocatedIncome?: number; // Bank-only receipts already included in income; avoids double counting.
   expense: number;
   transactionCount: number;
   spendingByJar: { jarId: string; amount: number }[];
@@ -122,6 +125,7 @@ export interface MonthlyCycleSummary {
     remaining: number;
     closingCarryovers: JarCarryover[];
     isArchived?: boolean;
+    manualOpeningBalance?: number;
   }[];
   carriedForward?: number;
   createdAt: string;

@@ -1,0 +1,47 @@
+import { expect, test } from '@playwright/test';
+import { characterFixture } from './fixture';
+
+test('hat aura stays above the body, shirt behind the back and shoe glow around shoes at every portrait size', async ({ page }, info) => {
+  const fixture = await characterFixture(page, { light: info.project.name === 'phone-light', ownedItemIds: ['hat-comet', 'shirt-phoenix', 'shoes-gold'] });
+  fixture.state().equipped = { ...fixture.state().equipped, hat: 'hat-comet', shirt: 'shirt-phoenix', shoes: 'shoes-gold' };
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/');
+  const checkPortrait = async (selector: string) => {
+    const portrait = page.locator(selector).first();
+    const avatar = (await portrait.locator('.pixel-character').boundingBox())!;
+    const root = portrait.locator('.equipped-aura');
+    await expect(root.locator('.equipped-slot-aura')).toHaveCount(3);
+    expect((await root.boundingBox())!.width).toBeCloseTo(avatar.width, 0);
+    const hat = root.locator('[data-slot="hat"]');
+    const shirt = root.locator('[data-slot="shirt"]');
+    const shoes = root.locator('[data-slot="shoes"]');
+    await expect(hat).toHaveAttribute('data-aura', 'rainbow');
+    await expect(shirt).toHaveAttribute('data-aura', 'platinum');
+    await expect(shoes).toHaveAttribute('data-aura', 'gold');
+    const head = (await hat.boundingBox())!; const body = (await shirt.boundingBox())!; const feet = (await shoes.boundingBox())!;
+    expect(head.y + head.height).toBeLessThan(body.y);
+    expect(body.y + body.height / 2).toBeLessThan(feet.y);
+    expect(feet.y).toBeGreaterThan(avatar.y + avatar.height * .75);
+    expect(feet.y + feet.height).toBeLessThanOrEqual(avatar.y + avatar.height + 2);
+    await expect(shoes.locator('.equipped-local-glow')).toHaveCount(2);
+    await expect(shoes.locator('.cosmetic-aura-rays, .cosmetic-aura-orbit')).toHaveCount(0);
+    await expect(hat.locator('.cosmetic-aura-rays')).toHaveCSS('animation-name', 'cosmetic-aura-turn');
+    await expect(shirt).toHaveCSS('pointer-events', 'none');
+  };
+  await checkPortrait('.character-companion-portrait');
+  await page.getByRole('button', { name: 'Character profile', exact: true }).click();
+  await checkPortrait('.character-stage');
+  await page.locator('.character-stage').screenshot({ path: info.outputPath('slot-auras.png') });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(page.locator('.character-stage [data-slot="shoes"] .equipped-local-glow').first()).toHaveCSS('animation-name', 'none');
+  await page.getByRole('button', { name: 'Hats', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove accessory', exact: true }).click();
+  await expect(page.locator('.character-stage .equipped-slot-aura[data-slot="hat"]')).toHaveCount(0);
+  await expect(page.locator('.character-stage .equipped-slot-aura[data-slot="shirt"]')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.getByRole('button', { name: 'Analytics', exact: true }).click();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await checkPortrait('.character-ranking-portrait');
+  expect(fixture.drawRequests).toHaveLength(0);
+  expect(fixture.materialRequests).toHaveLength(0);
+});

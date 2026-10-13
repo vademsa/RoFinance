@@ -1,4 +1,5 @@
 import type { Jar, JarCarryover, MonthlyCycleSummary, Transaction } from '../types';
+import { isBankOnlyIncome } from '../../shared/transactions';
 import {
   getClosingCarryovers,
   getCycleTransactions,
@@ -113,7 +114,7 @@ export function buildAnalyticsCycles({
       closingCarryovers: getClosingCarryovers(jar, currentStart, currentEnd, spent),
     };
   });
-  const currentIncome = amount(monthlyIncome);
+  const currentIncome = amount(monthlyIncome) + sum(currentTransactions.filter(isBankOnlyIncome).map((item) => amount(item.amount)));
   const currentExpense = sum([...currentSpending.values()]);
   const current: AnalyticsCycle = {
     id: currentStartKey,

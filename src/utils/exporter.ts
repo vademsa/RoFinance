@@ -3,6 +3,7 @@ import { Jar, Transaction } from '../types';
 import { formatVND, formatDateVI } from './formatters';
 import { convertVndForDisplay, getRuntimePreferences } from '../lib/preferences';
 import type { AnalyticsCycle } from './analytics';
+import { isBankOnlyIncome } from '../../shared/transactions';
 
 const escapeHtml = (value: unknown) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -87,7 +88,7 @@ export function buildExportReportData(
   return {
     reportTransactions,
     reportJars,
-    income: cycle?.income ?? monthlyIncome,
+    income: cycle?.income ?? monthlyIncome + reportTransactions.filter(isBankOnlyIncome).reduce((sum, transaction) => sum + transaction.amount, 0),
     totalSpent: cycle?.expense ?? reportTransactions
       .filter((transaction) => transaction.type === 'expense')
       .reduce((sum, transaction) => sum + transaction.amount, 0),
@@ -153,7 +154,7 @@ export function buildExcelWorkbook(
       'Mã Giao Dịch': tx.id,
       'Ngày': formatDateVI(tx.date),
       'Loại': tx.type === 'income' ? 'Thu nhập' : tx.type === 'expense' ? 'Chi tiêu' : 'Chuyển tiền',
-      'Hũ Tài Chính': jar ? `${jar.name} (${jar.code})` : 'Chưa phân loại',
+      'Hũ Tài Chính': isBankOnlyIncome(tx) ? 'Không phân bổ' : jar ? `${jar.name} (${jar.code})` : 'Chưa phân loại',
       'Danh Mục': tx.category,
       [`Số Tiền (${currencyLabel})`]: convertVndForDisplay(tx.amount),
       'Ngân Hàng': tx.bankName || jar?.bankName || '-',
@@ -389,7 +390,7 @@ export function exportToPDFPrint(
               <tr>
                 <td>${formatDateVI(tx.date)}</td>
                 <td>${tx.type === 'income' ? 'Thu nhập' : tx.type === 'expense' ? 'Chi tiêu' : 'Chuyển tiền'}</td>
-                <td>${escapeHtml(jar ? jar.name : '-')}</td>
+                <td>${escapeHtml(isBankOnlyIncome(tx) ? 'Không phân bổ' : jar ? jar.name : '-')}</td>
                 <td>${escapeHtml(tx.category)}</td>
                 <td class="text-right" style="font-weight: 600; color: ${tx.type === 'income' ? '#16a34a' : '#dc2626'};">
                   ${tx.type === 'income' ? '+' : '-'}${formatVND(tx.amount)}

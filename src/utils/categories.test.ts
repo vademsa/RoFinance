@@ -30,3 +30,10 @@ test('custom expense categories are scoped to their jar', () => {
   assert.ok(getTransactionCategories('expense', 'NEC', custom).some((item) => item.name === 'Ăn khuya'));
   assert.ok(!getTransactionCategories('expense', 'PLAY', custom).some((item) => item.name === 'Ăn khuya'));
 });
+
+test('a custom jar still offers a generic expense category for statement imports', () => {
+  const categories = getTransactionCategories('expense', 'MY_CUSTOM_JAR', []);
+  assert.equal(categories.length, 1);
+  assert.equal(categories[0].name, 'Khác');
+  assert.equal(categories[0].jarCode, 'MY_CUSTOM_JAR');
+});

@@ -1,4 +1,5 @@
 import type { Jar, JarCarryover, MonthlyCycleSummary, Transaction } from '../types';
+import { isBankOnlyIncome } from '../../shared/transactions';
 
 export function normalizeResetDay(day: number) {
   return Math.min(31, Math.max(1, Math.round(Number(day) || 1)));
@@ -229,6 +230,7 @@ export function createMonthlyCycleSummary(
 ): MonthlyCycleSummary {
   const cycleTransactions = getCycleTransactions(transactions, cycleStart, cycleEnd);
   const expenseByJar = getExpenseByJar(cycleTransactions);
+  const unallocatedIncome = cycleTransactions.filter(isBankOnlyIncome).reduce((total, item) => total + item.amount, 0);
   const cycleEndInclusive = new Date(cycleEnd);
   cycleEndInclusive.setDate(cycleEndInclusive.getDate() - 1);
   const jarBreakdown = jars.map((rawJar) => {
@@ -256,7 +258,8 @@ export function createMonthlyCycleSummary(
     id: toLocalDateKey(cycleStart),
     cycleStart: toLocalDateKey(cycleStart),
     cycleEnd: toLocalDateKey(cycleEndInclusive),
-    income: Math.max(0, fallbackIncome),
+    income: Math.max(0, fallbackIncome) + unallocatedIncome,
+    unallocatedIncome,
     expense: Object.values(expenseByJar).reduce((total, amount) => total + amount, 0),
     transactionCount: cycleTransactions.length,
     spendingByJar: jars.map((jar) => ({
@@ -421,7 +424,7 @@ export function rebuildMonthlyCycleSummaries(
         cycleEnd,
         transactions,
         snapshotJars || jars,
-        summary.income ?? fallbackIncome,
+        (summary.income ?? fallbackIncome) - (summary.unallocatedIncome || 0),
         archivedIds,
       ),
       createdAt: summary.createdAt,

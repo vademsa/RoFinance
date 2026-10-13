@@ -120,7 +120,8 @@ export function getTransactionCategories(
 ) {
   const defaults = type === 'income'
     ? DEFAULT_INCOME_CATEGORIES
-    : DEFAULT_EXPENSE_CATEGORIES_BY_JAR_CODE[jarCode || ''] || [];
+    : DEFAULT_EXPENSE_CATEGORIES_BY_JAR_CODE[jarCode || ''] ||
+      (jarCode ? [expense('other', 'Khác', 'tag', jarCode)] : []);
   const custom = customCategories.filter((category) =>
     category.type === type && (type === 'income' || category.jarCode === jarCode)
   );

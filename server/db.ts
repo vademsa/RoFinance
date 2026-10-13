@@ -1,5 +1,7 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
+import { CHARACTER_SCHEMA_SQL } from './characterSchema';
+import { ADMIN_SCHEMA_SQL } from './adminSchema';
 
 dotenv.config({ path: ['.env.local', '.env'] });
 const { Pool } = pg;
@@ -78,6 +80,8 @@ export async function migrateDatabase() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(CHARACTER_SCHEMA_SQL);
+  await pool.query(ADMIN_SCHEMA_SQL);
 }
 
 export async function getConfigValue<T>(key: string): Promise<T | undefined> {

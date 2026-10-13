@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Plus, AlertTriangle, AlertCircle, ArrowUpRight, ArrowDownLeft, RefreshCw, Calendar, Tag, Building2 } from 'lucide-react';
-import { Jar, MonthlyCycleSummary, Transaction, TransactionCategory } from '../types';
+import { BankAccount, Jar, MonthlyCycleSummary, Transaction, TransactionCategory } from '../types';
+import { isBankOnlyIncome } from '../../shared/transactions';
 import { formatVND } from '../utils/formatters';
 import { getDisplayCurrencyCode } from '../lib/preferences';
 import { CurrencyInput } from './CurrencyInput';
@@ -8,10 +9,10 @@ import {
   getFinancialCycleStart,
   getBackdatableJarIds,
   getNextFinancialCycleStart,
-  getPreviousFinancialCycleStart,
   isDateInCycle,
   toLocalDateKey,
 } from '../utils/monthlyCycle';
+import { getHistoricalSummaryForDate } from '../utils/historicalBalances';
 import { findTransactionCategory, getTransactionCategories } from '../constants/categories';
 import { CategoryPicker } from './CategoryPicker';
 import { CategoryIcon } from './CategoryIcon';
@@ -21,11 +22,13 @@ import {
   PAYMENT_METHOD_OPTIONS,
 } from '../../shared/banks';
 import { getDynamicAmountSuggestions } from '../utils/amountSuggestions';
+const EMPTY_BANK_ACCOUNTS: BankAccount[] = [];
 
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   jars: Jar[];
+  bankAccounts?: BankAccount[];
   onAddTransaction: (newTx: Omit<Transaction, 'id'>) => boolean | void;
   onUpdateTransaction: (id: string, transaction: Omit<Transaction, 'id'>) => boolean | void;
   customCategories: TransactionCategory[];
@@ -33,7 +36,8 @@ interface TransactionModalProps {
   onUpdateCategory: (category: TransactionCategory) => void;
   initialJarId?: string | null;
   resetDay: number;
-  previousCycleSummary?: MonthlyCycleSummary;
+  monthlySummaries: MonthlyCycleSummary[];
+  initialDate?: string;
   editingTransaction?: Transaction | null;
   isAmountsHidden?: boolean;
 }
@@ -42,6 +46,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   isOpen,
   onClose,
   jars,
+  bankAccounts = EMPTY_BANK_ACCOUNTS,
   onAddTransaction,
   onUpdateTransaction,
   customCategories,
@@ -49,7 +54,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   onUpdateCategory,
   initialJarId,
   resetDay,
-  previousCycleSummary,
+  monthlySummaries,
+  initialDate,
   editingTransaction,
   isAmountsHidden = false,
 }) => {
@@ -63,41 +69,50 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [description, setDescription] = useState<string>('');
   const [paymentMethodCode, setPaymentMethodCode] = useState<string>(CASH_PAYMENT_METHOD.code);
   const [incomeJarIds, setIncomeJarIds] = useState<string[]>([]);
+  const [incomeDestination, setIncomeDestination] = useState<'jars' | 'bank'>('jars');
+  const [receivingAccountId, setReceivingAccountId] = useState('');
   const [transferToJarId, setTransferToJarId] = useState<string>(jars[1]?.id || '');
 
   useEffect(() => {
     if (!isOpen) return;
     const nextType = editingTransaction?.type || 'expense';
     setType(nextType);
+    setIncomeDestination(editingTransaction && isBankOnlyIncome(editingTransaction) ? 'bank' : 'jars');
+    setReceivingAccountId(editingTransaction?.bankAccountId || bankAccounts[0]?.id || '');
     setAmount(editingTransaction?.amount || 0);
     setAmountError('');
     setDateError('');
-    setDate(editingTransaction?.date || toLocalDateKey(new Date()));
+    const nextDate = editingTransaction?.date || initialDate || toLocalDateKey(new Date());
+    setDate(nextDate);
     setDescription(editingTransaction?.description || '');
-    const initialJar = jars.find((jar) => jar.id === editingTransaction?.jarId)
-      || jars.find((jar) => jar.id === initialJarId)
-      || jars[0];
-    if (!initialJar) return;
-    setJarId(initialJar.id);
+    const isHistoricalDate = nextDate < toLocalDateKey(getFinancialCycleStart(new Date(), resetDay));
+    const eligibleIds = isHistoricalDate
+      ? getBackdatableJarIds(getHistoricalSummaryForDate(monthlySummaries, nextDate, resetDay))
+      : new Set(jars.map((jar) => jar.id));
+    const eligibleJars = jars.filter((jar) => eligibleIds.has(jar.id));
+    const initialJar = eligibleJars.find((jar) => jar.id === editingTransaction?.jarId)
+      || eligibleJars.find((jar) => jar.id === initialJarId)
+      || eligibleJars[0];
+    setJarId(initialJar?.id || '');
     setPaymentMethodCode(
       findPaymentMethodByCode(editingTransaction?.paymentMethodCode)?.code
-      || findPaymentMethodByCode(initialJar.bankCode)?.code
+      || findPaymentMethodByCode(initialJar?.bankCode)?.code
       || CASH_PAYMENT_METHOD.code
     );
     const editableAllocationIds = editingTransaction?.allocations
       ?.map((allocation) => allocation.jarId)
-      .filter((id) => jars.some((jar) => jar.id === id));
-    setIncomeJarIds(editableAllocationIds?.length ? editableAllocationIds : [initialJar.id]);
+      .filter((id) => eligibleIds.has(id));
+    setIncomeJarIds(editableAllocationIds?.length ? editableAllocationIds : initialJar ? [initialJar.id] : []);
     const destination = jars.find((jar) => jar.id === editingTransaction?.transferToJarId)
-      || jars.find((jar) => jar.id !== initialJar.id);
+      || jars.find((jar) => jar.id !== initialJar?.id);
     if (destination) setTransferToJarId(destination.id);
     const initialCategories = getTransactionCategories(
       nextType === 'income' ? 'income' : 'expense',
-      initialJar.code,
+      initialJar?.code,
       customCategories,
     );
     setCategory(editingTransaction?.category || initialCategories[0]?.name || 'Khác');
-  }, [editingTransaction, initialJarId, isOpen, jars]);
+  }, [editingTransaction, initialJarId, initialDate, isOpen, jars, monthlySummaries, resetDay, bankAccounts]);
 
   if (!isOpen) return null;
 
@@ -105,29 +120,29 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const todayKey = toLocalDateKey(now);
   const currentCycleStart = getFinancialCycleStart(now, resetDay);
   const currentCycleEnd = getNextFinancialCycleStart(currentCycleStart, resetDay);
-  const previousCycleStart = getPreviousFinancialCycleStart(now, resetDay);
-  const previousCycleJarIds = getBackdatableJarIds(previousCycleSummary);
+  const isPreviousCycleDate = type !== 'transfer' && Boolean(date && date < toLocalDateKey(currentCycleStart));
+  const historicalSummary = isPreviousCycleDate ? getHistoricalSummaryForDate(monthlySummaries, date, resetDay) : undefined;
+  const previousCycleJarIds = getBackdatableJarIds(historicalSummary);
   const previousCycleJars = jars.filter((jar) => previousCycleJarIds.has(jar.id));
-  const canBackdateTransaction = Boolean(previousCycleSummary && previousCycleJars.length > 0);
-  const isPreviousCycleDate = type !== 'transfer' && isDateInCycle(
-    date,
-    previousCycleStart,
-    currentCycleStart,
-  );
+  const canBackdateTransaction = Boolean(historicalSummary && previousCycleJars.length > 0);
   const expenseJars = isPreviousCycleDate ? previousCycleJars : jars;
   const incomeJars = isPreviousCycleDate ? previousCycleJars : jars;
   const selectableJars = type === 'expense' ? expenseJars : type === 'income' ? incomeJars : jars;
   const selectedJar = selectableJars.find((j) => j.id === jarId) || selectableJars[0];
   const selectedDestinationJar = jars.find((j) => j.id === transferToJarId);
+  const bankOnly = type === 'income' && incomeDestination === 'bank';
+  const receivingAccount = bankAccounts.find((account) => account.id === receivingAccountId);
   const categories = getTransactionCategories(
     type === 'income' ? 'income' : 'expense',
-    selectedJar?.code,
+    bankOnly ? undefined : selectedJar?.code,
     customCategories,
   );
   const selectedCategory = type === 'transfer'
     ? undefined
-    : findTransactionCategory(category, type, selectedJar?.code, customCategories);
-  const selectedPaymentMethod = type === 'transfer'
+    : findTransactionCategory(category, type, bankOnly ? undefined : selectedJar?.code, customCategories);
+  const selectedPaymentMethod = bankOnly
+    ? findPaymentMethodByCode(receivingAccount?.bankCode) || CASH_PAYMENT_METHOD
+    : type === 'transfer'
     ? findPaymentMethodByCode(selectedJar?.bankCode) || CASH_PAYMENT_METHOD
     : findPaymentMethodByCode(paymentMethodCode) || CASH_PAYMENT_METHOD;
 
@@ -142,24 +157,28 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       return;
     }
     const belongsToCurrentCycle = isDateInCycle(date, currentCycleStart, currentCycleEnd);
-    const belongsToPreviousCycle = isDateInCycle(date, previousCycleStart, currentCycleStart);
+    const belongsToPreviousCycle = date < toLocalDateKey(currentCycleStart);
     const allowedDate = date <= todayKey && (
       belongsToCurrentCycle ||
-      (type !== 'transfer' && canBackdateTransaction && belongsToPreviousCycle)
+      (type !== 'transfer' && (bankOnly || canBackdateTransaction) && belongsToPreviousCycle)
     );
     if (!allowedDate) {
       setDateError(type === 'transfer'
         ? 'Chuyển hũ chỉ được ghi trong chu kỳ hiện tại.'
-        : 'Thu và chi chỉ có thể ghi trong chu kỳ hiện tại hoặc chu kỳ liền trước.');
+        : 'Chu kỳ cũ cần có số dư đầu kỳ của hũ trước khi ghi thu hoặc chi.');
       return;
     }
-    const invalidPreviousIncomeAllocation = type === 'income' && belongsToPreviousCycle && (
+    if (bankOnly && !receivingAccount) {
+      setDateError('Hãy chọn một tài khoản ngân hàng đã lưu để nhận tiền.');
+      return;
+    }
+    const invalidPreviousIncomeAllocation = type === 'income' && !bankOnly && belongsToPreviousCycle && (
       incomeJarIds.length === 0 || incomeJarIds.some((id) => !previousCycleJarIds.has(id))
     );
-    if (!selectedJar ||
+    if ((!bankOnly && !selectedJar) ||
       (type === 'expense' && belongsToPreviousCycle && !previousCycleJarIds.has(selectedJar.id)) ||
       invalidPreviousIncomeAllocation) {
-      setDateError('Hũ này không tồn tại trong dữ liệu tổng kết của chu kỳ trước.');
+      setDateError('Hũ này không tồn tại trong dữ liệu tổng kết của chu kỳ đã chọn.');
       return;
     }
     if (type === 'transfer' && (!selectedDestinationJar || selectedDestinationJar.id === selectedJar?.id)) return;
@@ -171,7 +190,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       editingTransaction.allocations.every((allocation, index) => (
         allocation.jarId === incomeJarIds[index]
       ));
-    const incomeAllocations = type === 'income'
+    const incomeAllocations = type === 'income' && !bankOnly
       ? preserveExistingAllocations
         ? editingTransaction.allocations?.map((allocation) => ({ ...allocation }))
         : incomeJarIds.map((selectedJarId, index) => {
@@ -188,7 +207,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     const transactionData: Omit<Transaction, 'id'> = {
       type,
       amount,
-      jarId: type === 'income' ? (incomeJarIds[0] || jarId) : jarId,
+      jarId: bankOnly ? '' : type === 'income' ? (incomeJarIds[0] || jarId) : jarId,
+      bankAccountId: bankOnly ? receivingAccount?.id : undefined,
       category: type === 'transfer' ? 'Chuyển khoản nội bộ' : category,
       categoryId: type === 'transfer' ? undefined : selectedCategory?.id,
       categoryIcon: type === 'transfer' ? 'rotate-ccw' : selectedCategory?.icon,
@@ -197,7 +217,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       paymentMethodCode: selectedPaymentMethod.code,
       bankName: selectedPaymentMethod.shortName,
       transferToJarId: type === 'transfer' ? selectedDestinationJar?.id : undefined,
-      sourceAccountNumber: type === 'transfer' ? selectedJar?.accountNumber : undefined,
+      sourceAccountNumber: editingTransaction?.bankTransactionId
+        ? editingTransaction.sourceAccountNumber
+        : type === 'transfer' ? selectedJar?.accountNumber : undefined,
+      bankTransactionId: editingTransaction?.bankTransactionId,
       recipientAccount: type === 'transfer' ? selectedDestinationJar?.accountNumber : undefined,
       sourceBankCode: type === 'transfer' ? selectedJar?.bankCode : undefined,
       destinationBankCode: type === 'transfer' ? selectedDestinationJar?.bankCode : undefined,
@@ -375,6 +398,23 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           {/* Jar Selection */}
           {type === 'income' ? (
             <div className="space-y-2">
+              <label htmlFor="income-destination" className="block text-xs font-bold uppercase tracking-wider text-zinc-400">Cách nhận tiền</label>
+              <select id="income-destination" value={incomeDestination} onChange={(event) => {
+                setIncomeDestination(event.target.value as 'jars' | 'bank'); setDateError('');
+              }} className="w-full p-3 bg-[#121214] border border-zinc-700 rounded-2xl font-semibold text-xs text-white focus:outline-none focus:border-indigo-500">
+                <option value="jars">Phân bổ khoản thu vào các hũ</option>
+                <option value="bank">Nhận vào tài khoản, không phân bổ hũ</option>
+              </select>
+              {bankOnly ? <div className="space-y-2">
+                <label htmlFor="income-bank-account" className="block text-xs font-bold uppercase tracking-wider text-zinc-400">Tài khoản ngân hàng nhận tiền</label>
+                <select id="income-bank-account" value={receivingAccountId} onChange={(event) => { setReceivingAccountId(event.target.value); setDateError(''); }} required
+                  className="w-full p-3 bg-[#121214] border border-zinc-700 rounded-2xl font-semibold text-xs text-white focus:outline-none focus:border-indigo-500">
+                  <option value="">Chọn tài khoản đã lưu</option>
+                  {bankAccounts.map((account) => <option data-no-translate="true" key={account.id} value={account.id}>{account.bankName} · {account.accountNumber} · {account.accountHolder}</option>)}
+                </select>
+                <p className="text-xs text-zinc-400">Tiền chỉ cộng vào tài khoản đã chọn. Số dư và tỷ lệ các hũ không thay đổi.</p>
+                {bankAccounts.length === 0 && <p role="status" className="text-xs text-amber-400">Chưa có tài khoản ngân hàng. Hãy thêm tài khoản trong mục Ngân hàng trước.</p>}
+              </div> : <>
               <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400">
                 Phân bổ khoản thu vào các hũ
               </label>
@@ -411,6 +451,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                   );
                 })}
               </div>
+              </>}
             </div>
           ) : type === 'transfer' ? (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -500,12 +541,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 </div>
               ) : (
                 <CategoryPicker
-                  key={`${type}-${selectedJar?.code || 'all'}`}
+                  key={`${type}-${bankOnly ? 'bank' : selectedJar?.code || 'all'}`}
                   categories={categories}
                   customCategories={customCategories}
                   value={category}
                   type={type}
-                  jarCode={selectedJar?.code}
+                  jarCode={bankOnly ? undefined : selectedJar?.code}
                   onChange={(nextCategory) => setCategory(nextCategory.name)}
                   onAddCategory={onAddCategory}
                   onUpdateCategory={onUpdateCategory}
@@ -513,7 +554,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               )}
             </div>
 
-            <div className="space-y-1.5 sm:col-span-2">
+            {!bankOnly && <div className="space-y-1.5 sm:col-span-2">
               <label htmlFor="transaction-payment-method" className="block text-xs font-bold uppercase tracking-wider text-zinc-400">
                 Phương Thức / Ngân Hàng
               </label>
@@ -537,7 +578,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                   Phương thức được lấy tự động từ ngân hàng của hũ nguồn.
                 </p>
               )}
-            </div>
+            </div>}
           </div>
 
           {/* Date & Description */}
@@ -550,20 +591,16 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 id="transaction-date"
                 type="date"
                 value={date}
-                min={type !== 'transfer' && canBackdateTransaction
-                  ? toLocalDateKey(previousCycleStart)
-                  : toLocalDateKey(currentCycleStart)}
+                min={type === 'transfer' ? toLocalDateKey(currentCycleStart) : undefined}
                 max={todayKey}
                 onChange={(event) => {
                   const nextDate = event.target.value;
                   setDate(nextDate);
                   setDateError('');
-                  const nextIsPreviousCycle = type !== 'transfer' && isDateInCycle(
-                    nextDate,
-                    previousCycleStart,
-                    currentCycleStart,
-                  );
-                  const nextJars = nextIsPreviousCycle ? previousCycleJars : jars;
+                  const nextIsPreviousCycle = type !== 'transfer' && nextDate < toLocalDateKey(currentCycleStart);
+                  const nextIds = getBackdatableJarIds(nextIsPreviousCycle
+                    ? getHistoricalSummaryForDate(monthlySummaries, nextDate, resetDay) : undefined);
+                  const nextJars = nextIsPreviousCycle ? jars.filter((jar) => nextIds.has(jar.id)) : jars;
                   if (type === 'income') {
                     const retainedIds = incomeJarIds.filter((id) => nextJars.some((jar) => jar.id === id));
                     setIncomeJarIds(retainedIds.length ? retainedIds : nextJars[0] ? [nextJars[0].id] : []);
@@ -600,11 +637,13 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           </div>
 
-          {isPreviousCycleDate && (
+          {isPreviousCycleDate && !bankOnly && (
             <div className="flex items-start gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-200">
               <Calendar className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                Đang ghi {type === 'income' ? 'khoản thu' : 'khoản chi'} cho chu kỳ trước. Tổng kết cũ và số tiền dư chuyển sang chu kỳ hiện tại sẽ được tính lại tự động.
+                {canBackdateTransaction
+                  ? `Đang ghi ${type === 'income' ? 'khoản thu' : 'khoản chi'} cho chu kỳ cũ. Số dư sẽ được tính lại qua các chu kỳ có dữ liệu liên tục.`
+                  : 'Chu kỳ này chưa có số dư hũ đầu kỳ. Hãy đối soát số dư ở mục Giao dịch trước khi ghi.'}
               </span>
             </div>
           )}
@@ -620,7 +659,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all shadow-lg shadow-indigo-600/20"
+              disabled={bankOnly && !receivingAccount}
+              className="px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {editingTransaction ? 'Lưu Thay Đổi' : 'Lưu Giao Dịch'}
             </button>

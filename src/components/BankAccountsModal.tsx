@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Landmark, Plus, Save, Trash2, X } from 'lucide-react';
-import { BankAccount, Jar } from '../types';
+import { Landmark, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
+import { BankAccount, Jar, Transaction } from '../types';
 import { BANK_OPTIONS } from '../constants/defaultData';
 import { CurrencyInput } from './CurrencyInput';
-import { getDerivedBankBalance, getJarsLinkedToBankAccount } from '../utils/bankAccounts';
+import { bankAccountKey, getBankAccountBalance, getJarsLinkedToBankAccount } from '../utils/bankAccounts';
 import { formatVND } from '../utils/formatters';
 
 interface BankAccountsModalProps {
@@ -11,8 +11,13 @@ interface BankAccountsModalProps {
   onClose: () => void;
   bankAccounts: BankAccount[];
   jars: Jar[];
+  transactions?: Transaction[];
   onSaveBalance: (accountId: string, balance: number) => Promise<void>;
   onAddBankAccount: (account: Omit<BankAccount, 'id'>) => void;
+  onUpdateBankAccount: (
+    accountId: string,
+    details: Pick<BankAccount, 'bankCode' | 'accountNumber' | 'accountHolder'>,
+  ) => Promise<void>;
   onDeleteBankAccount: (accountId: string) => void;
   isAmountsHidden?: boolean;
 }
@@ -22,8 +27,10 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
   onClose,
   bankAccounts,
   jars,
+  transactions = [],
   onSaveBalance,
   onAddBankAccount,
+  onUpdateBankAccount,
   onDeleteBankAccount,
   isAmountsHidden = false,
 }) => {
@@ -35,17 +42,51 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
   const [balanceInputs, setBalanceInputs] = useState<Record<string, number | ''>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ bankCode: '', accountNumber: '', accountHolder: '' });
+  const [editError, setEditError] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
     setBalanceInputs(Object.fromEntries(bankAccounts.map((account) => [account.id, account.balance])));
     setMessage('');
-  }, [bankAccounts, isOpen]);
+    setEditingAccountId(null);
+    setEditError('');
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const selectedBank = BANK_OPTIONS.find((bank) => bank.code === selectedBankCode);
   const canAdd = Boolean(selectedBank && /^\d{6,19}$/.test(accountNumber) && accountHolder.trim());
+  const duplicateEditAccount = bankAccounts.some((account) => account.id !== editingAccountId &&
+    bankAccountKey(account) === bankAccountKey(editDraft));
+  const canSaveEdit = Boolean(editDraft.bankCode && /^\d{6,19}$/.test(editDraft.accountNumber) &&
+    editDraft.accountHolder.trim() && !duplicateEditAccount);
+
+  const beginEdit = (account: BankAccount) => {
+    setEditingAccountId(account.id);
+    setEditDraft({ bankCode: account.bankCode, accountNumber: account.accountNumber,
+      accountHolder: account.accountHolder });
+    setEditError('');
+    setMessage('');
+  };
+
+  const saveEdit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingAccountId || !canSaveEdit || isSavingEdit) return;
+    setIsSavingEdit(true);
+    setEditError('');
+    try {
+      await onUpdateBankAccount(editingAccountId, editDraft);
+      setEditingAccountId(null);
+      setMessage('Đã cập nhật thông tin tài khoản và các hũ liên kết.');
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : 'Không thể cập nhật tài khoản.');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   const addAccount = () => {
     if (!selectedBank || !canAdd) return;
@@ -83,7 +124,7 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/75 p-3 sm:p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/75 p-3 sm:p-5" onMouseDown={(event) => { if (event.target === event.currentTarget && !isSavingEdit) onClose(); }}>
       <div className="my-auto w-full max-w-3xl overflow-hidden rounded-[28px] border border-zinc-800 bg-[#18181b] text-zinc-100 shadow-2xl">
         <header className="flex items-start justify-between gap-4 border-b border-zinc-800 bg-[#121214] p-5 sm:p-6">
           <div className="flex items-center gap-3">
@@ -94,7 +135,7 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
         </header>
 
         <div className="max-h-[75vh] space-y-4 overflow-y-auto p-4 sm:p-6">
-          {message && <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">{message}</div>}
+          {message && <div role="status" className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">{message}</div>}
 
           <section className="rounded-2xl border border-zinc-800 bg-[#121214] p-4">
             <button type="button" onClick={() => setIsAddFormOpen((value) => !value)} className="flex w-full cursor-pointer items-center justify-between gap-3 text-left">
@@ -124,17 +165,30 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
                       {isDerivedFromJars ? `Tự động tổng hợp từ ${linkedJars.length} hũ` : `Lưu thủ công: ${account.lastSynced}`}
                     </div>
                   </div>
-                  {isDerivedFromJars ? (
-                    <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-2.5 text-right font-mono text-sm font-black text-indigo-200 sm:min-w-44">
-                      {formatVND(getDerivedBankBalance(jars, account), isAmountsHidden)}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+                    {isDerivedFromJars ? <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-2.5 text-right font-mono text-sm font-black text-indigo-200 sm:min-w-44">
+                      {formatVND(getBankAccountBalance(jars, account, transactions), isAmountsHidden)}
+                    </div> : <>
                       <CurrencyInput id={`manual-balance-${account.id}`} value={balanceInputs[account.id] ?? account.balance} onValueChange={(value) => setBalanceInputs((current) => ({ ...current, [account.id]: value }))} min={0} hideAmount={isAmountsHidden} className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-[#1c1c20] px-3 py-2 text-right font-mono text-sm font-bold text-white outline-none focus:border-indigo-500 sm:w-44" />
                       <button type="button" onClick={() => saveBalance(account)} disabled={savingId === account.id} aria-label={`Lưu số dư ${account.bankName}`} className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50"><Save className="h-4 w-4" /></button>
                       {account.isManuallyAdded && <button type="button" onClick={() => onDeleteBankAccount(account.id)} aria-label={`Xóa ${account.bankName}`} className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-rose-500/20 text-rose-400 hover:bg-rose-500/10"><Trash2 className="h-4 w-4" /></button>}
+                    </>}
+                    <button type="button" onClick={() => beginEdit(account)} aria-label={`Chỉnh sửa ${account.bankName} ${account.accountNumber}`} className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-500/30 text-indigo-300 transition-colors hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Pencil className="h-4 w-4" /></button>
+                  </div>
+                  {editingAccountId === account.id && <form onSubmit={saveEdit} className="grid gap-3 border-t border-zinc-800 pt-3 sm:col-span-2 sm:grid-cols-2">
+                    <p className="text-xs text-zinc-400 sm:col-span-2">{isDerivedFromJars
+                      ? `Đổi thông tin này cũng cập nhật ${linkedJars.length} hũ đang liên kết; số dư hũ và giao dịch cũ không bị xóa.`
+                      : 'Chỉnh sửa thông tin tài khoản; số dư đã lưu được giữ nguyên.'}</p>
+                    <Field label="Ngân hàng"><select value={editDraft.bankCode} onChange={(event) => setEditDraft((current) => ({ ...current, bankCode: event.target.value }))} className={inputClass}><option value="">Chọn ngân hàng</option>{BANK_OPTIONS.map((bank) => <option key={bank.code} value={bank.code}>{bank.shortName}</option>)}</select></Field>
+                    <Field label="Số tài khoản"><input inputMode="numeric" value={editDraft.accountNumber} onChange={(event) => setEditDraft((current) => ({ ...current, accountNumber: event.target.value.replace(/\D/g, '').slice(0, 19) }))} className={`${inputClass} font-mono`} /></Field>
+                    <Field label="Tên chủ tài khoản"><input value={editDraft.accountHolder} maxLength={100} onChange={(event) => setEditDraft((current) => ({ ...current, accountHolder: event.target.value.toUpperCase().slice(0, 100) }))} className={inputClass} /></Field>
+                    {duplicateEditAccount && <p role="alert" className="self-end text-xs text-rose-300">Tài khoản ngân hàng này đã có trong danh sách.</p>}
+                    {editError && <p role="alert" className="text-xs text-rose-300 sm:col-span-2">{editError}</p>}
+                    <div className="flex justify-end gap-2 sm:col-span-2">
+                      <button type="button" onClick={() => setEditingAccountId(null)} disabled={isSavingEdit} className="rounded-xl border border-zinc-700 px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-zinc-800 disabled:opacity-50">Hủy</button>
+                      <button type="submit" disabled={!canSaveEdit || isSavingEdit} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-40"><Save className="h-4 w-4" />{isSavingEdit ? 'Đang lưu...' : 'Lưu thay đổi'}</button>
                     </div>
-                  )}
+                  </form>}
                 </article>
               );
             })}

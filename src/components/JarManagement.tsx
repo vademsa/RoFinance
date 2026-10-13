@@ -16,14 +16,16 @@ import {
   Eye,
   EyeOff,
   LayoutTemplate,
+  X,
 } from 'lucide-react';
-import { Jar } from '../types';
+import { BankAccount, Jar, Transaction } from '../types';
 import { formatVND } from '../utils/formatters';
 import { getDisplayCurrencyCode } from '../lib/preferences';
 import { CurrencyInput } from './CurrencyInput';
 import { BANK_OPTIONS } from '../constants/defaultData';
 import { ReceiveQRModal } from './ReceiveQRModal';
 import { canCreateVietQR } from '../utils/vietqrPayload';
+import { bankAccountKey, linkJarToBankAccount, syncBankAccountsWithJars } from '../utils/bankAccounts';
 import {
   getCarryoverTotal,
   getTransferredInTotal,
@@ -33,6 +35,8 @@ import {
 
 interface JarManagementProps {
   jars: Jar[];
+  bankAccounts: BankAccount[];
+  transactions?: Transaction[];
   monthlyIncome: number;
   onOpenIncomeModal: () => void;
   onOpenTransactionModal: (defaultJarId?: string) => void;
@@ -45,6 +49,8 @@ interface JarManagementProps {
 
 export const JarManagement: React.FC<JarManagementProps> = ({
   jars,
+  bankAccounts,
+  transactions,
   monthlyIncome,
   onOpenIncomeModal,
   onOpenTransactionModal,
@@ -59,6 +65,8 @@ export const JarManagement: React.FC<JarManagementProps> = ({
   const [isSavingJar, setIsSavingJar] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [receivingJar, setReceivingJar] = useState<Jar | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const accountOptions = syncBankAccountsWithJars(jars, bankAccounts, transactions);
 
   const totalSpent = jars.reduce((sum, j) => sum + j.currentSpent, 0);
   const totalBudget = jars.reduce((sum, j) => sum + j.targetBudget, 0);
@@ -68,11 +76,25 @@ export const JarManagement: React.FC<JarManagementProps> = ({
   const handleEditSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingJar || isSavingJar) return;
-    if (editingJar.bankCode && !/^\d{6,19}$/.test(editingJar.accountNumber.trim())) {
+    let jarToSave = editingJar;
+    if (selectedAccountId && selectedAccountId !== 'MANUAL') {
+      const selectedAccount = accountOptions.find((account) => account.id === selectedAccountId);
+      if (!selectedAccount) {
+        setSaveError('Tài khoản đã chọn không còn trong danh sách. Vui lòng chọn lại.');
+        return;
+      }
+      try {
+        jarToSave = linkJarToBankAccount(editingJar, selectedAccount);
+      } catch (error) {
+        setSaveError(error instanceof Error ? error.message : 'Tài khoản ngân hàng không hợp lệ.');
+        return;
+      }
+    }
+    if (jarToSave.bankCode && !/^\d{6,19}$/.test(jarToSave.accountNumber.trim())) {
       setSaveError('Số tài khoản phải gồm 6–19 chữ số.');
       return;
     }
-    if (editingJar.bankCode && !editingJar.accountName.trim()) {
+    if (jarToSave.bankCode && !jarToSave.accountName.trim()) {
       setSaveError('Vui lòng nhập tên chủ tài khoản.');
       return;
     }
@@ -80,10 +102,10 @@ export const JarManagement: React.FC<JarManagementProps> = ({
     setSaveError('');
     try {
       await onUpdateJar({
-        ...editingJar,
-        accountNumber: editingJar.accountNumber.trim(),
-        accountName: editingJar.accountName.trim(),
-        bankName: editingJar.bankName.trim(),
+        ...jarToSave,
+        accountNumber: jarToSave.accountNumber.trim(),
+        accountName: jarToSave.accountName.trim(),
+        bankName: jarToSave.bankName.trim(),
       });
       setEditingJar(null);
     } catch (error: any) {
@@ -267,6 +289,10 @@ export const JarManagement: React.FC<JarManagementProps> = ({
                     onClick={() => {
                       setAllocationInputMode('percentage');
                       setEditingJar(normalizedJar);
+                      setSelectedAccountId(accountOptions.find((account) =>
+                        bankAccountKey(account) === bankAccountKey(normalizedJar))?.id ||
+                        (normalizedJar.bankCode ? 'MANUAL' : ''));
+                      setSaveError('');
                     }}
                     className="p-2 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-xl transition-colors"
                     title="Chỉnh sửa thông số hũ"
@@ -387,17 +413,19 @@ export const JarManagement: React.FC<JarManagementProps> = ({
 
       {/* Edit Jar Modal */}
       {editingJar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-[#18181b] border border-zinc-800 rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 text-zinc-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-sm">
+          <div className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-4 overflow-y-auto rounded-3xl border border-zinc-800 bg-[#18181b] p-6 text-zinc-100 shadow-2xl">
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <h3 className="font-extrabold text-base text-white">
                 Cấu Hình Hũ: {editingJar.name} ({editingJar.code})
               </h3>
               <button
+                type="button"
                 onClick={() => setEditingJar(null)}
-                className="text-zinc-400 hover:text-white p-1 rounded-full hover:bg-zinc-800"
+                aria-label="Đóng cấu hình hũ"
+                className="rounded-full p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
-                <AlertCircle className="w-5 h-5" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -494,6 +522,38 @@ export const JarManagement: React.FC<JarManagementProps> = ({
               )}
 
               <div>
+                <label className="block font-bold text-zinc-300 mb-1" htmlFor="jar-saved-account">Tài khoản ngân hàng đã lưu</label>
+                <select
+                  id="jar-saved-account"
+                  value={selectedAccountId}
+                  onChange={(event) => {
+                    const nextId = event.target.value;
+                    setSelectedAccountId(nextId);
+                    setSaveError('');
+                    if (!nextId) {
+                      setEditingJar({ ...editingJar, bankCode: '', bankName: 'Chưa cấu hình',
+                        accountNumber: '', accountName: '' });
+                    } else if (nextId !== 'MANUAL') {
+                      const chosen = accountOptions.find((account) => account.id === nextId);
+                      if (chosen) {
+                        try { setEditingJar(linkJarToBankAccount(editingJar, chosen)); }
+                        catch (error) { setSaveError(error instanceof Error ? error.message : 'Tài khoản không hợp lệ.'); }
+                      }
+                    }
+                  }}
+                  className="w-full rounded-xl border border-zinc-700 bg-[#1c1c20] p-2.5 font-medium text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Không liên kết tài khoản</option>
+                  {accountOptions.map((account) => <option key={account.id} value={account.id}>
+                    {account.bankName} · {account.accountNumber} · {account.accountHolder}
+                  </option>)}
+                  <option value="MANUAL">Nhập thông tin thủ công</option>
+                </select>
+                {accountOptions.length === 0 && <p className="mt-1.5 text-[11px] text-amber-300">Chưa có tài khoản đã lưu. Hãy thêm trong mục Giao dịch → Quản lý tài khoản.</p>}
+                {selectedAccountId && selectedAccountId !== 'MANUAL' && <p className="mt-1.5 text-[11px] text-zinc-400">Thông tin ngân hàng và số tài khoản được lấy từ tài khoản đã chọn. Có thể dùng chung một tài khoản cho nhiều hũ.</p>}
+              </div>
+
+              {selectedAccountId === 'MANUAL' && <><div>
                 <label className="block font-bold text-zinc-300 mb-1">Ngân Hàng Thụ Hưởng</label>
                 <select
                   value={editingJar.bankCode}
@@ -540,7 +600,7 @@ export const JarManagement: React.FC<JarManagementProps> = ({
                   onChange={(e) => setEditingJar({ ...editingJar, accountName: e.target.value.slice(0, 100) })}
                   className="w-full p-2.5 bg-[#1c1c20] border border-zinc-700 rounded-xl font-medium text-white focus:outline-none focus:border-indigo-500"
                 />
-              </div>
+              </div></>}
 
               <div className="pt-2 flex justify-end space-x-2">
                 <button

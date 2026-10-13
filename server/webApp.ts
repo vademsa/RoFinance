@@ -1,6 +1,7 @@
 import express from 'express';
 import httpProxy from 'http-proxy';
 import path from 'path';
+import { isAdminPagePath } from '../shared/admin';
 
 export function validateApiTarget(value: string): string {
   const url = new URL(value);
@@ -27,7 +28,11 @@ export function createWebApp(apiTarget: string, webDir: string) {
   });
   apiProxy.on('error', (_error, _req, res) => {
     if ('writeHead' in res && !res.headersSent) {
-      res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
+      // An unavailable upstream must not turn a private response into a
+      // cacheable page, including protected /admin proxy failures.
+      res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'private, no-store', 'Vary': 'Cookie, Authorization',
+        'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff' });
       res.end(JSON.stringify({ error: 'API tạm thời không khả dụng' }));
     } else {
       res.destroy();
@@ -35,8 +40,18 @@ export function createWebApp(apiTarget: string, webDir: string) {
   });
   app.use('/api', (req, res) => apiProxy.web(req, res));
 
-  app.use(express.static(webDir, { index: false }));
+  // Protected page requests must never fall through to static/SPA content.
+  app.use((req, res, next) => {
+    if (isAdminPagePath(req.path)) apiProxy.web(req, res, { target: validateApiTarget(apiTarget) });
+    else next();
+  });
+
+  app.use(express.static(webDir, { index: false, setHeaders: (res, file) => {
+    // A reload must fetch the current HTML, not reuse an old CDN/browser shell.
+    if (file.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
+  } }));
   app.get('*', (_req, res) => {
+    res.set('Cache-Control', 'no-store');
     res.sendFile(path.join(webDir, 'index.html'));
   });
   app.use((_req, res) => {

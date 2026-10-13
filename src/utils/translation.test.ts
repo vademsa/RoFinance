@@ -10,6 +10,15 @@ import { DEFAULT_APP_PREFERENCES, setRuntimePreferences } from '../lib/preferenc
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TransactionList } from '../components/TransactionList';
+import { PASSWORD_MAX_BYTES_VI, PASSWORD_REQUIREMENTS_VI } from '../../shared/passwordPolicy';
+
+test('registration policy messages are fully bilingual', () => {
+  for (const text of [PASSWORD_MAX_BYTES_VI, PASSWORD_REQUIREMENTS_VI, 'Mật khẩu không được chứa ký tự điều khiển.']) {
+    assert.equal(localizeText(text, 'vi'), text);
+    assert.doesNotMatch(localizeText(text, 'en'), /[À-ỹĐđ]/u);
+    assert.notEqual(localizeText(text, 'en'), text);
+  }
+});
 
 test('financial UI phrases translate as complete English sentences', () => {
   assert.equal(localizeText('Danh Sách 7 Hũ Tài Chính', 'en'), 'List of 7 Financial Jars');
@@ -27,6 +36,8 @@ test('financial UI phrases translate as complete English sentences', () => {
   assert.equal(localizeText('Hồ sơ cá nhân', 'en'), 'Personal profile');
   assert.equal(localizeText('Lưu thủ công: 29/09/2026', 'en'), 'Saved manually: 29/09/2026');
   assert.equal(localizeText('Đã cập nhật hồ sơ cá nhân.', 'en'), 'Profile updated.');
+  assert.equal(localizeText('Tài khoản ngân hàng đã lưu', 'en'), 'Saved bank account');
+  assert.equal(localizeText('Nhập thông tin thủ công', 'en'), 'Enter details manually');
 });
 
 test('translation never changes the VND unit of the USD-to-VND exchange rate', () => {
@@ -67,6 +78,9 @@ test('native cycle select renders every label in the chosen language', () => {
     onDeleteTransaction: () => undefined,
     onEditTransaction: () => undefined,
     onOpenTransactionModal: () => undefined,
+    onOpenStatementImport: () => undefined,
+    onOpenBulkEntry: () => undefined,
+    onOpenHistoricalBalance: () => undefined,
     bankAccounts: [],
     onUpdateBankBalance: async () => undefined,
     monthlySummaries: [],

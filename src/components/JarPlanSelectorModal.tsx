@@ -11,6 +11,8 @@ interface JarPlanSelectorModalProps {
   snapshots: JarPlanSnapshot[];
   hasActiveDebt: boolean;
   onApply: (selection: { planId?: string; snapshotId?: string }) => void;
+  onOpenCommunity?: () => void;
+  language?: 'en' | 'vi';
 }
 
 export function JarPlanSelectorModal({
@@ -21,6 +23,8 @@ export function JarPlanSelectorModal({
   snapshots,
   hasActiveDebt,
   onApply,
+  onOpenCommunity,
+  language = 'vi',
 }: JarPlanSelectorModalProps) {
   const initialSelection = activePlanId === CUSTOM_JAR_PLAN_ID
     ? 'current'
@@ -81,6 +85,7 @@ export function JarPlanSelectorModal({
         </header>
 
         <div className="overflow-y-auto overscroll-contain p-4 sm:p-6">
+          {onOpenCommunity && <button data-no-translate="true" type="button" onClick={onOpenCommunity} className="mb-4 min-h-11 w-full cursor-pointer rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-3 text-sm font-bold text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">{language === 'en' ? 'Community jar templates · Design & share' : 'Mẫu hũ cộng đồng · Tự thiết kế & chia sẻ'}</button>}
           <div className="mb-4 flex items-start gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-[11px] leading-relaxed text-emerald-200 sm:text-xs">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
             <p>Cấu hình hiện tại luôn được lưu thành một bản riêng trước khi đổi. Khi quay lại, hệ thống chỉ khôi phục cấu trúc và thông tin hũ, không khôi phục số dư cũ lần thứ hai.</p>

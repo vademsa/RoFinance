@@ -4,6 +4,7 @@ import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import { pool } from './db';
 import { verifyMobileBearer } from './mobileAuth';
+import { passwordPolicyError } from '../shared/passwordPolicy';
 
 declare module 'express-session' {
   interface SessionData {
@@ -21,8 +22,10 @@ export function createSessionMiddleware() {
   if (!secret || secret.length < 32) {
     throw new Error('SESSION_SECRET phải được cấu hình và dài ít nhất 32 ký tự');
   }
+  const store = new PgSession({ pool, tableName: 'user_sessions', createTableIfMissing: true });
+  protectRevokedSessionStore(store, pool);
   return session({
-    store: new PgSession({ pool, tableName: 'user_sessions', createTableIfMissing: true }),
+    store,
     name: 'rofinance.sid',
     secret,
     resave: false,
@@ -35,6 +38,17 @@ export function createSessionMiddleware() {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   });
+}
+export function protectRevokedSessionStore(store: Pick<session.Store, 'get'>, database: Pick<typeof pool, 'query'>) {
+  const getSession = store.get.bind(store);
+  // A deleted session can be saved again by an already-running request. Retain
+  // revocation tombstones and reject it at hydration, including /auth/me.
+  store.get = (sid, callback) => {
+    void database.query('SELECT 1 FROM admin_revoked_web_sessions WHERE sid=$1', [sid]).then(result => {
+      if (result.rows.length) callback(null, null);
+      else getSession(sid, callback);
+    }).catch(error => callback(error));
+  };
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -68,9 +82,7 @@ export function normalizeEmail(value: unknown) {
 
 export function validateCredentials(email: string, password: unknown): string | null {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Email không hợp lệ';
-  if (typeof password !== 'string' || password.length < 8) return 'Mật khẩu phải có ít nhất 8 ký tự';
-  if (password.length > 128) return 'Mật khẩu quá dài';
-  return null;
+  return passwordPolicyError(password);
 }
 
 export const hashPassword = (password: string) => bcrypt.hash(password, 12);

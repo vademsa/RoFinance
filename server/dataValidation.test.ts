@@ -53,11 +53,70 @@ const baseData = {
   },
 };
 
+const bankReceipt = { ...transaction, type: 'income', jarId: '', bankAccountId: account.id, amount: 200_000, category: 'Thu nhập khác' };
+
+test('bank-only income accepts saved accounts and derives its bank identity from the account', () => {
+  const result = validateAndNormalizeUserData({ ...baseData, transactions: [{ ...bankReceipt, bankName: 'Ignored display label' }] });
+  assert.equal(result.error, undefined);
+  const saved = (result.value!.transactions as any[])[0];
+  assert.equal(saved.bankAccountId, account.id);
+  assert.equal(saved.jarId, '');
+  assert.equal(saved.bankName, 'Techcombank');
+  assert.equal(saved.allocations, undefined);
+  assert.equal(validateAndNormalizeUserData({ ...baseData, jars: [], transactions: [bankReceipt] }).error, undefined);
+});
+
+test('bank-only receipts reject unknown/foreign account IDs, mixed jars and forged transaction modes', () => {
+  for (const invalid of [
+    { ...bankReceipt, bankAccountId: 'other-users-account' },
+    { ...bankReceipt, bankAccountId: { id: account.id } },
+    { ...bankReceipt, jarId: jar.id },
+    { ...bankReceipt, allocations: [{ jarId: jar.id, amount: 200_000 }] },
+    { ...bankReceipt, allocations: 'invalid' },
+    { ...bankReceipt, type: 'expense' },
+    { ...bankReceipt, type: 'transfer' },
+    { ...bankReceipt, transferToJarId: jar.id },
+    { ...bankReceipt, date: '2026-02-30' },
+    { ...bankReceipt, paymentMethodCode: 'EVIL' },
+  ]) assert.ok(validateAndNormalizeUserData({ ...baseData, transactions: [invalid] }).error);
+  assert.ok(validateAndNormalizeUserData({ ...baseData, bankAccounts: [], transactions: [bankReceipt] }).error);
+});
+
+test('bank-only receipts remain editable/deletable without an archived-jar lock', () => {
+  const original = { ...baseData, transactions: [bankReceipt] };
+  assert.equal(validateAndNormalizeUserData({ ...original, transactions: [{ ...bankReceipt, amount: 300_000 }] }, original).error, undefined);
+  assert.equal(validateAndNormalizeUserData({ ...original, transactions: [] }, original).error, undefined);
+  assert.ok(validateAndNormalizeUserData({ ...original, bankAccounts: [] }, original).error);
+});
+
+test('unallocated reconciliations must be finite bounded numbers', () => {
+  for (const invalid of ['0', NaN, Infinity, 1e16]) {
+    assert.ok(validateAndNormalizeUserData({ ...baseData, bankAccounts: [{ ...account, unallocatedOpeningBalance: invalid }] }).error);
+  }
+  assert.equal(validateAndNormalizeUserData({ ...baseData, bankAccounts: [{ ...account, unallocatedOpeningBalance: -500 }] }).error, undefined);
+});
+
 test('accepts a legitimate option-backed payment method', () => {
   const result = validateAndNormalizeUserData(baseData);
   assert.equal(result.error, undefined);
   assert.equal((result.value?.transactions as any[])[0].paymentMethodCode, 'TCB');
   assert.equal((result.value?.transactions as any[])[0].bankName, 'Techcombank');
+});
+
+test('rejects duplicate or malformed imported bank references', () => {
+  const duplicate = validateAndNormalizeUserData({
+    ...baseData,
+    transactions: [
+      { ...transaction, bankTransactionId: 'TCB:123456789:REF-1' },
+      { ...transaction, id: 'tx-2', bankTransactionId: 'TCB:123456789:REF-1' },
+    ],
+  });
+  assert.match(duplicate.error || '', /Mã bút toán.*trùng/);
+  const malformed = validateAndNormalizeUserData({
+    ...baseData,
+    transactions: [{ ...transaction, bankTransactionId: 'REF\n2' }],
+  });
+  assert.match(malformed.error || '', /Mã bút toán.*không hợp lệ/);
 });
 
 test('rejects an unknown method code and a spoofed bank display name', () => {
@@ -152,6 +211,20 @@ test('derives transfer bank fields from the selected jars', () => {
   assert.equal(normalized.bankName, 'Techcombank');
   assert.equal(normalized.sourceBankCode, 'TCB');
   assert.equal(normalized.destinationBankCode, 'VCB');
+});
+
+test('changing a linked jar bank keeps unchanged historical transfer bank details', () => {
+  const destination = { ...jar, id: 'jar-play', code: 'PLAY', name: 'Hưởng thụ',
+    bankCode: 'VCB', bankName: 'Vietcombank', accountNumber: '987654321' };
+  const historicalTransfer = { ...transaction, id: 'tx-transfer-old', type: 'transfer',
+    transferToJarId: destination.id, paymentMethodCode: 'TCB', bankName: 'Techcombank',
+    sourceBankCode: 'TCB', destinationBankCode: 'VCB', sourceAccountNumber: '123456789',
+    recipientAccount: '987654321' };
+  const data = { ...baseData, jars: [{ ...jar, bankCode: 'MB', bankName: 'MB',
+    accountNumber: '111222333' }, destination], transactions: [historicalTransfer] };
+  const result = validateAndNormalizeUserData(data, { transactions: [historicalTransfer] });
+  assert.equal(result.error, undefined);
+  assert.deepEqual((result.value?.transactions as any[])[0], historicalTransfer);
 });
 
 test('keeps an unchanged legacy label but rejects it on a new transaction', () => {

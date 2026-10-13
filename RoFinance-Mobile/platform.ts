@@ -1,5 +1,14 @@
 import type { Jar, Transaction } from '../src/types';
 import type { AnalyticsCycle } from '../src/utils/analytics';
+import { Preferences } from '@capacitor/preferences';
+import type { CharacterReceiptStorage } from '../shared/characterReceipt';
+
+export const characterReceiptStorage: CharacterReceiptStorage = {
+  keys: async () => (await Preferences.keys()).keys,
+  get: async (key) => (await Preferences.get({ key })).value,
+  set: async (key, value) => { await Preferences.set({ key, value }); },
+  remove: async (key) => { await Preferences.remove({ key }); },
+};
 
 export { authApi, dataApi, mobileApiFetch as apiFetch } from './mobileApi';
 export type { AuthUser } from './mobileApi';
