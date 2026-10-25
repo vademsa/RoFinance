@@ -1,6 +1,22 @@
 node_modules/
 dist/
 
+# Local implementation plans and internal notes; keep these together in plans/.
+/plans/
+/*_PLAN.md
+
+# Automated tests and synthetic fixtures are versioned under tests/.
+# Keep private legacy fixtures, operator tools and generated artifacts local.
+/tests/archive/
+/tests/support/
+/tests/artifacts/
+/tests/fixtures/private/
+**/storage-state*.json
+**/storageState*.json
+*.har
+/RoFinance-Mobile/android/app/src/test/
+/RoFinance-Mobile/android/app/src/androidTest/
+
 # Local environment and authentication files
 .env*
 *.env

@@ -4,7 +4,7 @@ test('expense logging automatically credits daily points once without confirmati
   const language = info.project.name === 'phone-light' ? 'vi' : 'en';
   const fixture = await characterFixture(page, { language, light: language === 'vi' });
   await page.goto('/');
-  await page.getByRole('button', { name: /^(Transactions|Chi Tiêu)$/ }).click();
+  await page.getByRole('button', { name: /^(Transactions|Giao dịch)$/ }).click();
   for (let i = 0; i < 2; i++) {
     await page.getByRole('button', { name: /^(New transaction|Ghi Nhận Giao Dịch Mới)$/ }).click();
     const dialog = page.getByRole('dialog');

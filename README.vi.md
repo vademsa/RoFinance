@@ -49,10 +49,11 @@ Khai báo các đường dẫn callback `/api/auth/google/callback` và `/api/au
 
 ```bash
 npm run lint
-npm run test:logic
 npm run build
 npm run start:api
 ```
+
+Test tự động, fixture giả lập và cấu hình Playwright được đưa lên Git trong [tests/](tests/README.md). Chạy `npm run test:typecheck`, `npm run test:logic`, `npm run test:brand` hoặc `npm run test:character:ui` từ thư mục gốc. Fixture cũ chứa dữ liệu riêng, công cụ vận hành local và kết quả test vẫn được loại khỏi Git. Build và chạy ứng dụng không cần các file test.
 
 Chạy web riêng bằng `npm run start:web` (hoặc `pm2 start ecosystem.config.cjs` để khởi động cả hai). Trỏ HTTPS proxy/tunnel hiện có tới cổng **web** (`6868` mặc định); tiến trình web chuyển tiếp `/api` tới cổng API (`6869`). Không công khai cổng API. Trình duyệt, OAuth callback và mobile vẫn có thể dùng cùng một HTTPS origin. Khi nâng cấp PM2 đang chạy, cần thay tiến trình `rofinance` cũ trước khi khởi động web mới vì cả hai cùng dùng cổng `6868`; thực hiện trong thời gian triển khai phù hợp. Chỉ build file sẽ không tự khởi động lại dịch vụ đang chạy.
 
@@ -135,14 +136,16 @@ npm run test:character:ui
 Với tài khoản thử nghiệm đã được chỉ định và phê duyệt, người vận hành có quyền truy cập database có thể cấp điểm quay sau khi server đã chạy migration:
 
 ```bash
-npx tsx scripts/grant-character-test-points.ts '<email-tài-khoản>' '<số-điểm>' '<UUID-v4>'
+npx tsx tests/support/grant-character-test-points.ts '<email-tài-khoản>' '<số-điểm>' '<UUID-v4>'
 ```
+
+CLI vận hành tùy chọn này chỉ lưu local, không có trong bản clone từ Git. Hãy dùng giao diện Admin đã xác thực cho việc hỗ trợ tài khoản thông thường.
 
 Dùng lại đúng UUID khi thử lại cùng lần cấp để chỉ cộng một lần. Tài khoản phải có hồ sơ nhân vật. Điểm thử dùng trường tùy chọn riêng `bonusPoints` (dữ liệu cũ mặc định bằng 0), không đặt lại điểm đã tiêu/tủ đồ, không sửa dữ liệu tài chính và không tăng điểm quản lý, cấp độ hoặc xếp hạng. Người dùng thông thường không được truy cập endpoint cấp điểm; Admin duy nhất dùng thao tác có lịch sử tại `/admin`. Người dùng không thể sửa trường này qua API hồ sơ. Điểm thiếu do chỉnh sửa tài chính cũ có thể được bù trước khi điểm thử khả dụng để quay.
 
 Nếu đã được cho phép cấp toàn bộ đồ để test, thêm `--full-collection` vào cuối lệnh. Công cụ cấp một bản sở hữu của từng ID hợp lệ trong danh mục, gồm đồ bí mật, giữ nguyên trang phục đang mặc, bản dư và mảnh cũ. Không tự tạo bản dư hoặc đổi tỉ lệ quay. Điểm và danh sách ID được cấp ghi nguyên tử vào sổ cấp thử; khi thử lại phải giữ nguyên UUID, tài khoản, điểm, cờ và danh mục. Không mở công cụ này thành API công khai. Một lượt hiện dùng 20 điểm, nên 999 lượt quay thêm tương ứng 19.980 điểm thử nếu không có khoản thiếu điểm do chỉnh sửa cũ.
 
-Kiểm thử tích hợp PostgreSQL chỉ chạy khi đặt `CHARACTER_TEST_DATABASE_URL` thành chuỗi kết nối cơ sở dữ liệu kiểm thử. Các tests tạo/xóa schema riêng có tên ngẫu nhiên; không dùng tài khoản database không được phép tạo schema kiểm thử. Kế hoạch chi tiết và các gate audit nằm trong [CHARACTER_FEATURE_PLAN.md](CHARACTER_FEATURE_PLAN.md).
+Kiểm thử tích hợp PostgreSQL chỉ chạy khi đặt `CHARACTER_TEST_DATABASE_URL` thành chuỗi kết nối cơ sở dữ liệu kiểm thử. Các tests tạo/xóa schema riêng có tên ngẫu nhiên; không dùng tài khoản database không được phép tạo schema kiểm thử.
 
 ## Ứng dụng mobile
 

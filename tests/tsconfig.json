@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["../src", "../shared", "../server", "./**/*.ts", "./**/*.tsx", "./scripts/*.mjs"],
+  "exclude": ["../node_modules", "../dist", "../RoFinance-Mobile", "./archive", "./android", "./artifacts", "./support"]
+}

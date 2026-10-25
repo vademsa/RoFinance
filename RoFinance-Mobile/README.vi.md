@@ -34,12 +34,13 @@ Từ thư mục gốc của repository, chạy:
 npm install
 npm run lint
 npm run lint:mobile
-npm run test:logic
 npm run sync:mobile
 ```
 
+Test tự động và fixture giả lập được đưa lên Git trong [../tests/](../tests/README.md). Chạy các npm script `test:logic`, `test:brand`, `test:typecheck` hoặc `test:character:ui` từ thư mục gốc. Fixture riêng tư, công cụ vận hành và kết quả test được loại khỏi Git. Build mobile không phụ thuộc các file test.
+
 Mở `RoFinance-Mobile/android/` bằng Android Studio hoặc `RoFinance-Mobile/ios/App/App.xcodeproj` bằng Xcode, rồi build và thử trên thiết bị thật. Từ thư mục gốc, chạy `npm run sync:mobile` sau khi sửa frontend. Không đặt `server.url` của Capacitor trỏ tới backend production: ứng dụng đóng gói UI của chính nó và gọi API backend riêng.
 
-Logo web, favicon, icon ứng dụng và màn hình khởi động Android/iOS được tạo từ ba PNG gốc đang sử dụng trong `../Logo/`. Với bộ ảnh ngày 12/10, `AM-1` là logo kèm chữ, `AM-3` là biểu tượng trong suốt và `AM-2` là icon nền sáng; xem tên tệp cụ thể trong `../BRANDING.md`. Sau khi đổi ảnh gốc, chạy `npm run icons:brand` (hoặc `npm run icons:mobile`) ở thư mục gốc, tiếp theo `npm run sync:mobile` và build lại bản native. Tài nguyên web được đặt tên theo nội dung khi build cả hai bản. Giữ cả PNG gốc lẫn ảnh đã tạo trong Git; không thay chúng bằng credential hoặc avatar cá nhân. Nếu launcher còn giữ icon cũ, hãy cài lại ứng dụng.
+Logo web, favicon, icon ứng dụng và màn hình khởi động Android/iOS được tạo từ ba PNG gốc đang sử dụng trong `../Logo/`. Với bộ ảnh ngày 12/10, `AM-1` là logo kèm chữ, `AM-3` là biểu tượng trong suốt và `AM-2` là icon nền sáng. Sau khi đổi ảnh gốc, chạy `npm run icons:brand` (hoặc `npm run icons:mobile`) ở thư mục gốc, tiếp theo `npm run sync:mobile` và build lại bản native. Tài nguyên web được đặt tên theo nội dung khi build cả hai bản. Giữ cả PNG gốc lẫn ảnh đã tạo trong Git; không thay chúng bằng credential hoặc avatar cá nhân. Nếu launcher còn giữ icon cũ, hãy cài lại ứng dụng.
 
 Giao diện và quy tắc chung chỉ sửa một lần trong `../src/` và `../shared/`, rồi build lại hai bản. Chỉ hành vi riêng mobile mới nằm trong thư mục này. Dependency được quản lý bởi npm workspace ở thư mục gốc, không cài thêm `node_modules` thứ hai.

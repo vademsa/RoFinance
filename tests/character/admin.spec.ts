@@ -65,7 +65,7 @@ test('admin overview/catalogue bilingual filters pagination themes and responsiv
 });
 
 for (const denial of [401, 403, 503, 'malformed'] as const) test(`admin ${denial} response never exposes metrics or catalogue`, async ({ page }) => {
-  const f = await fixture(page); f.response(denial === 'malformed' ? 200 : denial, denial === 'malformed' ? { role: 'admin', email: 'darkroller210@gmail.com' } : { error: 'PRIVATE_BACKEND_DATA' });
+  const f = await fixture(page); f.response(denial === 'malformed' ? 200 : denial, denial === 'malformed' ? { role: 'admin', email: 'admin-fixture@example.test' } : { error: 'PRIVATE_BACKEND_DATA' });
   await page.addInitScript(() => localStorage.setItem('role', 'admin'));
   await page.goto('/admin?role=admin');
   await expect(page.locator('.admin-app')).toHaveAttribute('data-admin-status', denial === 401 ? 'login' : denial === 403 ? 'forbidden' : 'error');

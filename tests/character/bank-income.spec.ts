@@ -12,7 +12,7 @@ test('bank-only receipts survive reload, edits, account changes, backdating and 
   ];
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  await page.getByRole('button', { name: /^(Transactions|Chi Tiêu)$/ }).click();
+  await page.getByRole('button', { name: /^(Transactions|Giao dịch)$/ }).click();
   await page.waitForTimeout(1200);
   const before = structuredClone({ jars: fixture.finance().jars, income: fixture.finance().monthlyIncome, accounts: fixture.finance().bankAccounts });
   const baseline = before.accounts.find(account => account.id === 'bank-primary')!.balance;
@@ -48,7 +48,7 @@ test('bank-only receipts survive reload, edits, account changes, backdating and 
   expect(fixture.finance().jars).toEqual(before.jars);
   expect(fixture.finance().monthlySummaries.find(summary => summary.cycleStart === previous)?.income).toBe(300000);
   await page.reload();
-  await page.getByRole('button', { name: /^(Transactions|Chi Tiêu)$/ }).click();
+  await page.getByRole('button', { name: /^(Transactions|Giao dịch)$/ }).click();
   await page.locator('select').filter({ has: page.locator('option[value="CURRENT_CYCLE"]') }).selectOption('ALL');
   await expect(row).toBeVisible();
   await expect(row.getByRole('button').last()).toBeEnabled();
@@ -63,7 +63,7 @@ test('bank-only receipts survive reload, edits, account changes, backdating and 
 test('amount suggestions scale with trailing zeros and a bank-only receipt requires a saved account', async ({ page }, info) => {
   await characterFixture(page, { light: info.project.name === 'phone-light', language: 'vi' });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Chi Tiêu', exact: true }).click();
+  await page.getByRole('button', { name: 'Giao dịch', exact: true }).click();
   await page.getByRole('button', { name: 'Ghi Nhận Giao Dịch Mới', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.locator('#transaction-amount').fill('2');

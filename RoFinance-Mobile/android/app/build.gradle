@@ -22,6 +22,11 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+    // Optional local-only tests live outside the native application sources.
+    sourceSets {
+        test.java.srcDirs = [rootProject.file('../../tests/android/unit/java')]
+        androidTest.java.srcDirs = [rootProject.file('../../tests/android/instrumented/java')]
+    }
 }
 
 repositories {

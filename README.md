@@ -56,10 +56,11 @@ Google requires an OAuth web client. Apple requires a Service ID with Sign in wi
 
 ```bash
 npm run lint
-npm run test:logic
 npm run build
 npm run start:api
 ```
+
+Automated tests, synthetic fixtures and Playwright configuration are versioned in [tests/](tests/README.md). Run `npm run test:typecheck`, `npm run test:logic`, `npm run test:brand` or `npm run test:character:ui` from the repository root. Private legacy fixtures, local operator tools and generated test artifacts remain excluded from Git. Building and running the application does not require test files.
 
 Start the web process separately with `npm run start:web` (or use `pm2 start ecosystem.config.cjs` to start both). Point your existing HTTPS proxy/tunnel at the **web** port (`6868` by default); the web process forwards `/api` to the API port (`6869`). Keep the API port private. The browser, OAuth callbacks, and mobile client can continue to use the same public HTTPS origin. When migrating an existing PM2 deployment, replace the old combined `rofinance` process before starting the new web process, since both use port `6868`; do this during a deployment window. Building files alone does not restart live services.
 
@@ -142,14 +143,16 @@ npm run test:character:ui
 For a specifically approved test account, an operator with database access can issue draw credit after startup migrations have run:
 
 ```bash
-npx tsx scripts/grant-character-test-points.ts '<account-email>' '<point-count>' '<UUID-v4>'
+npx tsx tests/support/grant-character-test-points.ts '<account-email>' '<point-count>' '<UUID-v4>'
 ```
+
+This optional operator CLI is local-only and not included in a Git clone. Use the authenticated Admin interface for normal account support.
 
 Use the same UUID when retrying the same grant: it is credited only once. The account must already have a character profile. Test credit uses a separate optional `bonusPoints` field (old states default to zero), does not reset spending/inventory or modify financial records, and never increases management scores, levels or rankings. No grant endpoint is available to ordinary users; the sole Admin uses audited `/admin` operations. Users cannot assign this field through the profile API. Existing financial corrections can offset test credit before it is available to spend.
 
 For an explicitly approved full-collection test, append `--full-collection` to the command. It grants one owned copy of every canonical catalogue item, including secrets, while retaining the existing outfit, spare copies and fragments. It never grants extra duplicates or changes prize probabilities. The credit and exact granted item IDs are recorded atomically in the operator ledger; retries must use the same UUID, account, points, flag and catalogue. Do not expose this script as a public API. One draw currently costs 20 points, so 999 additional draws require 19,980 test points when there is no existing correction shortfall.
 
-PostgreSQL integration tests run only when `CHARACTER_TEST_DATABASE_URL` is set to a test database connection. They create and remove uniquely named isolated schemas; never point test configuration at a database role that should not create test schemas. The detailed implementation and audit gates are recorded in [CHARACTER_FEATURE_PLAN.md](CHARACTER_FEATURE_PLAN.md).
+PostgreSQL integration tests run only when `CHARACTER_TEST_DATABASE_URL` is set to a test database connection. They create and remove uniquely named isolated schemas; never point test configuration at a database role that should not create test schemas.
 
 ## Mobile app
 

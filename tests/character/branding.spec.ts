@@ -11,7 +11,7 @@ test('new branding loads with responsive headers, profile and legal pages in bot
   const before = structuredClone({ writes: fixture.writes(), finance: fixture.finance() });
   const initialLogo = page.locator('header [data-brand-logo]').filter({ visible: true });
   await expect.poll(() => initialLogo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
-  await page.locator('header').screenshot({ path: info.outputPath('initial-brand-header.png') });
+  await page.locator('[data-ui="app-header"]').screenshot({ path: info.outputPath('initial-brand-header.png') });
   for (const width of [320, 375, 480, 768, 1024, 1280, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     const logo = page.locator(`header [data-brand-logo="${width < 480 ? 'icon' : 'wordmark'}"]`);
@@ -21,11 +21,11 @@ test('new branding loads with responsive headers, profile and legal pages in bot
     if (width >= 480) {
       expect(await logo.evaluate(image => getComputedStyle(image.parentElement!).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
     }
-    expect(await page.locator('header').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await page.locator('[data-ui="app-header"]').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     const profile = page.getByRole('button', { name: 'Profile of Private account', exact: true });
     const rect = await profile.boundingBox(); expect(rect!.x + rect!.width).toBeLessThanOrEqual(width);
   }
-  await page.locator('header').screenshot({ path: info.outputPath('brand-header.png') });
+  await page.locator('[data-ui="app-header"]').screenshot({ path: info.outputPath('brand-header.png') });
   await page.getByRole('button', { name: 'Profile of Private account', exact: true }).click();
   const modalLogo = page.locator('[data-brand-logo="icon"]').filter({ visible: true }).last();
   await expect(modalLogo).toBeVisible();
