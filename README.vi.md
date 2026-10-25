@@ -47,6 +47,17 @@ Khai báo các đường dẫn callback `/api/auth/google/callback` và `/api/au
 
 ## Build và kiểm tra
 
+“Cập nhật thu” có thể ghi nhận lương chu kỳ hiện tại vào tài khoản đã lưu rồi ghi
+chuyển khoản nội bộ tới các tài khoản liên kết với hũ. Các hũ dùng chung tài khoản
+được cộng gộp; tiền của hũ chưa liên kết ở lại tài khoản nhận lương. Nếu nguồn lương
+chưa được khai báo, chọn nguồn chưa khai báo để ghi thu trực tiếp vào các tài khoản
+được phân bổ, không tạo nguồn giả hoặc chuyển nội bộ. Với hũ chưa liên kết, chọn
+tài khoản nhận phần tiền đó. Tổng tiền trong
+ngân hàng chỉ tăng đúng số lương một lần. Lưu lại sẽ điều chỉnh giao dịch và chuyển
+khoản của cùng chu kỳ, không cộng thêm một lần lương. Chuyển nội bộ không tính vào
+tổng thu/chi. Chọn “Chỉ điều chỉnh hạn mức” sẽ không đổi tiền ngân hàng. Đây là ghi
+sổ, ứng dụng không thực hiện chuyển tiền thật tại ngân hàng.
+
 ```bash
 npm run lint
 npm run build

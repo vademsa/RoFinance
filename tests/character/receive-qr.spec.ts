@@ -66,7 +66,8 @@ test('a newly confirmed percentage allocation is reflected in the next QR withou
   await qr.getByRole('button', { name: vi ? 'Đóng' : 'Close', exact: true }).click();
   await page.getByRole('button', { name: vi ? 'Cập Nhật Thu Nhập' : 'Update Income', exact: true }).click();
   const allocation = page.getByRole('dialog', { name: vi ? 'Phân Bổ Hũ Tài Chính Hàng Tháng' : 'Monthly Jar Allocation', exact: true });
-  await allocation.locator('input').first().fill('20000000');
+  await allocation.locator('#salary-entry-mode').selectOption('budget');
+  await allocation.locator('#salary-income-amount').fill('20000000');
   await allocation.getByRole('button', { name: /Apply.*Allocation|Áp Dụng Phân Bổ/i }).click();
   await expect.poll(() => fixture.finance().monthlyIncome).toBe(20000000);
   await open(); await expect(field()).toHaveValue(vi ? '8.000.000' : '8,000,000');

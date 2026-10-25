@@ -145,7 +145,9 @@ test('compact layout fits narrow and wide screens and full jar tools remain avai
   await page.getByRole('button', { name: vi ? 'Quản lý hũ' : 'Manage jars', exact: true }).click();
   await expect(page.getByRole('heading', { name: vi ? 'Quản lý hũ tài chính' : 'Manage financial jars', exact: true })).toBeVisible();
   await page.getByRole('button', { name: vi ? 'Cập Nhật Thu Nhập' : 'Update Income', exact: true }).click();
-  const dialog = page.getByRole('dialog'); await dialog.locator('input').first().fill('20000000');
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#salary-entry-mode').selectOption('budget');
+  await dialog.locator('#salary-income-amount').fill('20000000');
   await dialog.getByRole('button', { name: /Apply.*Allocation|Áp Dụng Phân Bổ/i }).click();
   await expect.poll(() => fixture.finance().monthlyIncome).toBe(20000000);
   expect(fixture.finance().bankAccounts).toEqual(beforeBank);

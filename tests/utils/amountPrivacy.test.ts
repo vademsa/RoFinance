@@ -23,6 +23,8 @@ test('allocation modal masks income, preset amounts, allocation and carryover in
       onClose: () => undefined,
       jars: [jar],
       currentIncome: 10_000_000,
+      bankAccounts: [],
+      cycleStart: '2026-10-25',
       onApplyAllocation: () => undefined,
     };
     const visible = renderToStaticMarkup(React.createElement(IncomeAllocatorModal, props));

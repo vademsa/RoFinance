@@ -174,6 +174,7 @@ export function buildExcelWorkbook(
       'Ngân Hàng': account?.bankName || (tx.paymentMethodCode === 'CASH' ? 'Tiền mặt' : tx.bankName || tx.legacyPaymentLabel || '-'),
       'Ghi Chú': tx.description,
       'Tài Khoản Nguồn': account?.accountNumber || tx.sourceAccountNumber || '',
+      'Tài Khoản Đích': bankAccounts.find(a => a.id === tx.transferToBankAccountId)?.accountNumber || tx.recipientAccount || '',
     });
     transactionRowInfo.push({ level: 1 });
     groupAmount += convertVndForDisplay(tx.amount);
@@ -258,6 +259,7 @@ export function buildExcelWorkbook(
     { wch: 18 },
     { wch: 18 },
     { wch: 35 },
+    { wch: 22 },
     { wch: 22 },
   ];
 

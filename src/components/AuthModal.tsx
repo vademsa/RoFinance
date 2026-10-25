@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Toast } from './Toast';
 import { BrandLogo } from './BrandLogo';
 import {
   Apple,
@@ -7,7 +8,6 @@ import {
   Mail,
   KeyRound,
   LogOut,
-  CheckCircle2,
   Camera,
   Save,
   Trash2,
@@ -355,9 +355,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
                 )}
                 {successMsg && (
-                  <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">
-                    <CheckCircle2 className="h-4 w-4" /> {successMsg}
-                  </div>
+                  <Toast eventKey={successMsg} onDismiss={() => setSuccessMsg('')}>{successMsg}</Toast>
                 )}
 
                 <button
@@ -443,10 +441,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
 
               {successMsg && (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs flex items-center space-x-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>{successMsg}</span>
-                </div>
+                <Toast eventKey={successMsg} onDismiss={() => setSuccessMsg('')}>{successMsg}</Toast>
               )}
 
               <div className="space-y-1 text-xs">

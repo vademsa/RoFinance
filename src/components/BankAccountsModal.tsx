@@ -3,6 +3,7 @@ import { Landmark, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import { BankAccount, Jar, Transaction } from '../types';
 import { BANK_OPTIONS } from '../constants/defaultData';
 import { CurrencyInput } from './CurrencyInput';
+import { Toast } from './Toast';
 import { bankAccountKey, getBankAccountBalance, getJarsLinkedToBankAccount } from '../utils/bankAccounts';
 import { formatVND } from '../utils/formatters';
 
@@ -42,6 +43,7 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
   const [balanceInputs, setBalanceInputs] = useState<Record<string, number | ''>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [balanceError, setBalanceError] = useState('');
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ bankCode: '', accountNumber: '', accountHolder: '' });
   const [editError, setEditError] = useState('');
@@ -51,6 +53,7 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
     if (!isOpen) return;
     setBalanceInputs(Object.fromEntries(bankAccounts.map((account) => [account.id, account.balance])));
     setMessage('');
+    setBalanceError('');
     setEditingAccountId(null);
     setEditError('');
   }, [isOpen]);
@@ -113,12 +116,13 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
     if (balance === '' || balance === undefined || balance < 0) return;
     setSavingId(account.id);
     setMessage('');
+    setBalanceError('');
     try {
       await onSaveBalance(account.id, balance);
       setBalanceInputs(current => { const next = { ...current }; delete next[account.id]; return next; });
       setMessage(`Đã lưu số dư ${account.bankName}.`);
     } catch (error: any) {
-      setMessage(error.message || 'Không thể lưu số dư.');
+      setBalanceError(error.message || 'Không thể lưu số dư.');
     } finally {
       setSavingId(null);
     }
@@ -136,7 +140,8 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
         </header>
 
         <div className="max-h-[75vh] space-y-4 overflow-y-auto p-4 sm:p-6">
-          {message && <div role="status" className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">{message}</div>}
+          {message && <Toast eventKey={message} onDismiss={() => setMessage('')}>{message}</Toast>}
+          {balanceError && <div role="alert" className="rounded-xl border border-rose-500/30 px-3 py-2 text-xs text-rose-300">{balanceError}</div>}
 
           <section className="rounded-2xl border border-zinc-800 bg-[#121214] p-4">
             <button type="button" onClick={() => setIsAddFormOpen((value) => !value)} className="flex w-full cursor-pointer items-center justify-between gap-3 text-left">

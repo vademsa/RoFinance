@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Toast } from './Toast';
 import {
   X,
   CreditCard,
@@ -284,7 +285,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
 
         {/* Content */}
         <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto overscroll-contain flex-1">
-          {allocationNotice && <p data-no-translate="true" role="status" className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-300">{allocationNotice}</p>}
+          {allocationNotice && <Toast noTranslate eventKey={allocationNotice} onDismiss={() => setAllocationNotice('')}>{allocationNotice}</Toast>}
           {!hasDebtJar && (
             <div role="alert" className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-200">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />

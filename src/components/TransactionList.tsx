@@ -3,6 +3,7 @@ import { Search, Trash2, PlusCircle, Landmark, RefreshCw, WalletCards, CalendarR
 import { BankAccount, Jar, MonthlyCycleSummary, Transaction, TransactionCategory } from '../types';
 import { formatVND, formatDateVI } from '../utils/formatters';
 import { CurrencyInput } from './CurrencyInput';
+import { Toast } from './Toast';
 import {
   deduplicateBankAccounts,
   getBankAccountBalance,
@@ -22,7 +23,7 @@ import {
 import { groupTransactionsByDate } from '../utils/transactionHistory';
 import { getRuntimePreferences } from '../lib/preferences';
 import { getHistoricalSummaryForDate } from '../utils/historicalBalances';
-import { isBankOnlyIncome, isBankOnlyExpense, isBankOnlyTransaction } from '../../shared/transactions';
+import { isBankOnlyIncome, isBankOnlyExpense, isBankOnlyTransaction, isBankTransfer } from '../../shared/transactions';
 
 
 const formatTransactionGroupDate = (dateKey: string) => {
@@ -84,6 +85,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   const [balanceInputs, setBalanceInputs] = useState<Record<string, number | ''>>({});
   const [savingAccountId, setSavingAccountId] = useState<string | null>(null);
   const [balanceMessage, setBalanceMessage] = useState('');
+  const [balanceError, setBalanceError] = useState('');
   const uniqueAccounts = deduplicateBankAccounts(bankAccounts);
   const activeJars = jars.filter((jar) => activeJarIds.includes(jar.id));
   const isEnglish = getRuntimePreferences().language === 'en';
@@ -93,12 +95,13 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     if (value === '' || value < 0) return;
     setSavingAccountId(account.id);
     setBalanceMessage('');
+    setBalanceError('');
     try {
       await onUpdateBankBalance(account.id, value);
       setBalanceInputs(current => { const next = { ...current }; delete next[account.id]; return next; });
       setBalanceMessage(`Đã cập nhật số dư ${account.bankName}.`);
     } catch (error: any) {
-      setBalanceMessage(error.message || 'Không thể cập nhật số dư tài khoản');
+      setBalanceError(error.message || 'Không thể cập nhật số dư tài khoản');
     } finally {
       setSavingAccountId(null);
     }
@@ -176,7 +179,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
             <span>{isEnglish ? 'Manage accounts' : 'Quản lý tài khoản'}</span>
           </button>}
         </div>
-        {balanceMessage && <div role="status" className="rounded-lg border border-zinc-800 bg-[#18181b] px-2.5 py-1.5 text-[10px] text-zinc-300">{balanceMessage}</div>}
+        {balanceMessage && <Toast eventKey={balanceMessage} onDismiss={() => setBalanceMessage('')}>{balanceMessage}</Toast>}
+        {balanceError && <div role="alert" className="rounded-lg border border-rose-500/30 px-2.5 py-1.5 text-xs text-rose-300">{balanceError}</div>}
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {uniqueAccounts.map((account) => {
             const displayedBalance = getBankAccountBalance(activeJars, account, transactions);
@@ -371,7 +375,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     currentCycleStart,
                     currentCycleEnd,
                   );
-                  const referencesArchivedJar = (!isBankOnlyTransaction(tx) && !activeJarIds.includes(tx.jarId)) ||
+                  const bankTransfer = isBankTransfer(tx);
+                  const referencesArchivedJar = (!isBankOnlyTransaction(tx) && !bankTransfer && !activeJarIds.includes(tx.jarId)) ||
                     Boolean(tx.transferToJarId && !activeJarIds.includes(tx.transferToJarId)) ||
                     Boolean(tx.allocations?.some((allocation) => !activeJarIds.includes(allocation.jarId)));
                   const isPreviousCycleTransaction = tx.date < toLocalDateKey(currentCycleStart);
@@ -380,7 +385,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     ? historicalIds.has(tx.jarId)
                     : tx.type === 'income' && Boolean(tx.allocations?.length) &&
                       tx.allocations!.every((allocation) => historicalIds.has(allocation.jarId));
-                  const canModify = !referencesArchivedJar && (
+                  const canModify = !referencesArchivedJar && (!tx.salaryCycleStart || isCurrentCycleTransaction) && (
                     isCurrentCycleTransaction ||
                     (isPreviousCycleTransaction && tx.type !== 'transfer' && (isBankOnlyTransaction(tx) || hasValidPreviousSnapshot))
                   );
@@ -443,7 +448,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                         )}
                       </td>
                       <td className="p-3.5 font-medium text-zinc-300">
-                        {isTransfer && (tx.sourceBankCode || tx.destinationBankCode)
+                        {bankTransfer ? <span data-no-translate="true">{uniqueAccounts.find(a => a.id === tx.bankAccountId)?.bankName} · {uniqueAccounts.find(a => a.id === tx.bankAccountId)?.accountNumber} → {uniqueAccounts.find(a => a.id === tx.transferToBankAccountId)?.bankName} · {uniqueAccounts.find(a => a.id === tx.transferToBankAccountId)?.accountNumber}</span> : isTransfer && (tx.sourceBankCode || tx.destinationBankCode)
                           ? `${tx.sourceBankCode || '?'} → ${tx.destinationBankCode || '?'}`
                           : tx.bankAccountId
                             ? <span data-no-translate="true">{uniqueAccounts.find((account) => account.id === tx.bankAccountId)?.bankName || tx.bankName} · {uniqueAccounts.find((account) => account.id === tx.bankAccountId)?.accountNumber}</span>
@@ -470,7 +475,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                           <button
                             type="button"
                             onClick={() => onDeleteTransaction(tx.id)}
-                            disabled={!canModify}
+                            disabled={!canModify || Boolean(tx.salaryCycleStart)}
                             className="cursor-pointer rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-rose-500/10 hover:text-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-500/50 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-500"
                             title={canModify
                               ? 'Xóa giao dịch'

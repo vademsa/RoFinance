@@ -1,17 +1,42 @@
 import React, { useEffect, useState } from 'react';
 import { X, Calculator, ArrowRight, CheckCircle2, Building2, Percent, Wallet, CreditCard } from 'lucide-react';
-import { Jar } from '../types';
+import { BankAccount, Jar, Transaction } from '../types';
 import { formatVND } from '../utils/formatters';
-import { getDisplayCurrencyCode } from '../lib/preferences';
+import { getDisplayCurrencyCode, getRuntimePreferences } from '../lib/preferences';
 import { CurrencyInput } from './CurrencyInput';
-import { getCarryoverTotal, getTransferredInTotal } from '../utils/monthlyCycle';
+import { getCarryoverTotal, getTransferredInTotal, toLocalDateKey } from '../utils/monthlyCycle';
+import { allocateWholeUnits } from '../utils/jarPlans';
+import type { SalaryReceiptInput } from '../utils/salaryAllocation';
+import { bankAccountKey } from '../utils/bankAccounts';
+
+const EN_SALARY_ERRORS: Record<string, string> = {
+  'Số tiền hoặc ngày nhận lương trong chu kỳ hiện tại không hợp lệ.': 'Enter a valid salary amount and a date in the current cycle, not in the future.',
+  'Tổng tỷ lệ phân bổ phải bằng 100%.': 'Allocation percentages must total 100%.',
+  'Vui lòng chọn tài khoản nhận lương đã lưu.': 'Select a saved salary receiving account.',
+  'Mã giao dịch phân bổ bị trùng. Vui lòng tải lại dữ liệu.': 'An allocation transaction ID conflicts with existing data. Reload before retrying.',
+  'Không đủ số dư để điều chỉnh phân bổ lương đã ghi nhận. Vui lòng đối soát tài khoản trước.': 'Insufficient balance to correct this salary allocation. Reconcile the accounts first.',
+  'Lương đã liên kết hũ lưu trữ. Giữ nguyên số tiền, ngày và tài khoản nhận để phân bổ lại mà không ghi đè lịch sử.': 'This salary references archived jars. Keep its amount, date and receiving account unchanged when redistributing it to preserve history.',
+  'Giao dịch phân bổ lương không hợp lệ': 'Invalid salary allocation transaction.',
+  'Chuyển khoản nội bộ phải dùng hai tài khoản đã lưu khác nhau': 'Internal transfers require two different saved accounts.',
+  'Lương chỉ được ghi nhận một lần và tổng chuyển nội bộ không được vượt lương': 'Record salary only once; total internal transfers cannot exceed it.',
+  'Tài khoản nhận phần chưa liên kết không hợp lệ.': 'The account for unlinked jars is invalid.',
+  'Hũ chưa liên kết ngân hàng. Vui lòng chọn tài khoản nhận phần này.': 'Select a receiving account for jars without a linked bank account.',
+  'Lương đã liên kết hũ lưu trữ. Không thể đổi cách nhận hoặc ghi đè phân bổ lịch sử.': 'This salary references archived jars. Its receiving mode and historical allocations cannot be overwritten.',
+  'Nguồn nhận lương không hợp lệ': 'Invalid salary source.',
+  'Lương từ tài khoản chưa khai báo phải ghi thu trực tiếp, không kèm chuyển khoản nội bộ hoặc phân bổ trùng': 'Salary from an untracked account requires direct receipts, without internal transfers or duplicate allocations.',
+};
 
 interface IncomeAllocatorModalProps {
   isOpen: boolean;
   onClose: () => void;
   jars: Jar[];
   currentIncome: number;
-  onApplyAllocation: (newIncome: number, updatedJars: Jar[]) => void;
+  bankAccounts: BankAccount[];
+  salaryReceipt?: Transaction;
+  externalFallbackAccountId?: string;
+  additionalIncomeAllocations?: { jarId: string; amount: number }[];
+  cycleStart: string;
+  onApplyAllocation: (newIncome: number, updatedJars: Jar[], receipt?: SalaryReceiptInput) => void | Promise<void>;
   onOpenDebtModal?: () => void;
   isAmountsHidden?: boolean;
 }
@@ -21,17 +46,34 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
   onClose,
   jars,
   currentIncome,
+  bankAccounts,
+  salaryReceipt,
+  externalFallbackAccountId,
+  additionalIncomeAllocations = [],
+  cycleStart,
   onApplyAllocation,
   onOpenDebtModal,
   isAmountsHidden = false,
 }) => {
   const [incomeInput, setIncomeInput] = useState<number>(currentIncome);
   const [tempJars, setTempJars] = useState<Jar[]>(jars);
+  const [recordSalary, setRecordSalary] = useState(true);
+  const [salaryAccountId, setSalaryAccountId] = useState('');
+  const [unlinkedAccountId, setUnlinkedAccountId] = useState('');
+  const [salaryDate, setSalaryDate] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const isEnglish = getRuntimePreferences().language === 'en';
 
   useEffect(() => {
     if (!isOpen) return;
-    setIncomeInput(currentIncome);
+    setIncomeInput(salaryReceipt?.amount ?? currentIncome);
     setTempJars(jars.map((jar) => ({ ...jar })));
+    setRecordSalary(bankAccounts.length > 0);
+    setSalaryAccountId(salaryReceipt?.salarySource === 'external' ? '' : salaryReceipt?.bankAccountId || bankAccounts[0]?.id || '');
+    setUnlinkedAccountId(externalFallbackAccountId || '');
+    setSalaryDate(salaryReceipt?.date || toLocalDateKey(new Date()));
+    setError('');
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -43,16 +85,41 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
   };
 
   const totalPercentage = tempJars.reduce((sum, j) => sum + (j.percentage || 0), 0);
+  const amounts = allocateWholeUnits(incomeInput, tempJars.map(j => j.percentage));
+  const receivingAccounts = new Map<string, number>();
+  let needsUnlinkedAccount = false;
+  tempJars.forEach((jar, index) => {
+    const linked = bankAccounts.find(a => bankAccountKey(a) === bankAccountKey(jar));
+    if (!linked && amounts[index] > 0) needsUnlinkedAccount = true;
+    const destination = linked?.id || salaryAccountId || unlinkedAccountId;
+    receivingAccounts.set(destination, (receivingAccounts.get(destination) || 0) + amounts[index]);
+  });
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (saving) return;
+    setError('');
+    if (!Number.isSafeInteger(incomeInput) || incomeInput < (recordSalary ? 1 : 0) || incomeInput > 1_000_000_000_000_000 ||
+      tempJars.some(j => !Number.isFinite(j.percentage) || j.percentage < 0 || j.percentage > 100) ||
+      Math.abs(totalPercentage - 100) > 0.000001) {
+      setError(isEnglish ? 'Enter a valid amount and allocations totalling 100%.' : 'Nhập số tiền hợp lệ và tổng tỷ lệ bằng 100%.');
+      return;
+    }
     // Calculate new target budgets
-    const updated = tempJars.map((j) => ({
+    const updated = tempJars.map((j, index) => ({
       ...j,
-      cycleAllocation: Math.round((incomeInput * j.percentage) / 100),
-      targetBudget: getCarryoverTotal(j) + getTransferredInTotal(j) + Math.round((incomeInput * j.percentage) / 100),
+      cycleAllocation: amounts[index],
+      targetBudget: getCarryoverTotal(j) + getTransferredInTotal(j) + amounts[index],
     }));
-    onApplyAllocation(incomeInput, updated);
-    onClose();
+    setSaving(true);
+    try {
+      await onApplyAllocation(incomeInput, updated, recordSalary ? { bankAccountId: salaryAccountId || null, date: salaryDate,
+        ...(!salaryAccountId && needsUnlinkedAccount && unlinkedAccountId ? { unlinkedBankAccountId: unlinkedAccountId } : {}),
+      } : undefined);
+      onClose();
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : '';
+      setError((isEnglish ? EN_SALARY_ERRORS[message] : undefined) || message || (isEnglish ? 'Could not save allocation.' : 'Không thể lưu phân bổ.'));
+    } finally { setSaving(false); }
   };
 
   const handleQuickPreset = (amount: number) => {
@@ -66,6 +133,7 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
         <div className="bg-[#121214] text-white p-6 relative border-b border-zinc-800">
           <button
             onClick={onClose}
+            disabled={saving}
             className="absolute top-5 right-5 text-zinc-400 hover:text-white p-1.5 rounded-xl hover:bg-zinc-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -77,8 +145,7 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
             <div>
               <h2 id="income-allocation-title" className="text-xl font-black text-white tracking-tight">Phân Bổ Hũ Tài Chính Hàng Tháng</h2>
               <p className="text-xs text-zinc-400 mt-0.5">
-                Nhập thu nhập và tỷ lệ cho từng hũ; RoFinance chỉ lưu kế hoạch bạn xác nhận
-                . Đây là hạn mức dự kiến, không ghi nhận tiền vào ngân hàng.
+                {isEnglish ? 'Saved salary account: receive salary, then transfer internally. Untracked source: receive directly into allocated accounts. Jars remain spending limits; no bank payment is initiated.' : 'Nguồn lương đã lưu: ghi thu rồi chuyển nội bộ. Nguồn chưa khai báo: ghi thu trực tiếp vào các tài khoản được phân bổ. Hũ vẫn là hạn mức; ứng dụng không chuyển tiền thật tại ngân hàng.'}
               </p>
             </div>
           </div>
@@ -86,6 +153,41 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
 
         {/* Content */}
         <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+          <div className="space-y-3 rounded-2xl border border-zinc-700 bg-[#121214] p-4" data-no-translate="true">
+            <label htmlFor="salary-entry-mode" className="block text-xs font-bold text-zinc-300">{isEnglish ? 'Action' : 'Thao tác'}</label>
+            <select id="salary-entry-mode" value={recordSalary ? 'salary' : 'budget'} onChange={e => { const salary = e.target.value === 'salary'; setRecordSalary(salary); setIncomeInput(salary ? salaryReceipt?.amount ?? currentIncome : jars.reduce((sum, j) => sum + (j.cycleAllocation ?? j.targetBudget - getCarryoverTotal(j) - getTransferredInTotal(j)), 0)); }} disabled={saving} className="w-full rounded-xl border border-zinc-700 bg-[#1c1c20] p-3 text-sm text-white">
+              <option value="salary" disabled={!bankAccounts.length}>{isEnglish ? 'Record salary and distribute to accounts' : 'Ghi nhận lương và phân bổ vào tài khoản'}</option>
+              <option value="budget">{isEnglish ? 'Adjust budget limits only (no bank transaction)' : 'Chỉ điều chỉnh hạn mức (không ghi thu vào ngân hàng)'}</option>
+            </select>
+            {recordSalary && <>
+              <label htmlFor="salary-bank-account" className="block text-xs font-bold text-zinc-300">{isEnglish ? 'Salary receiving account' : 'Tài khoản nhận lương'}</label>
+              <select id="salary-bank-account" value={salaryAccountId} onChange={e => setSalaryAccountId(e.target.value)} disabled={saving} className="w-full rounded-xl border border-zinc-700 bg-[#1c1c20] p-3 text-sm text-white">
+                <option value="">{isEnglish ? 'Untracked salary account · receive directly into allocated accounts' : 'Tài khoản lương chưa khai báo · nhận trực tiếp vào tài khoản phân bổ'}</option>
+                {bankAccounts.map(a => <option key={a.id} value={a.id}>{a.bankName} · {a.accountNumber}</option>)}
+              </select>
+              {!salaryAccountId && <p className="text-xs text-zinc-400">{isEnglish ? 'Each allocated account receives income directly. No source account is created or debited, and no internal transfer is recorded.' : 'Mỗi tài khoản được phân bổ nhận thu trực tiếp. Không tạo hoặc trừ tiền tài khoản nguồn, không ghi chuyển khoản nội bộ.'}</p>}
+              {!salaryAccountId && needsUnlinkedAccount && <>
+                <label htmlFor="salary-unlinked-account" className="block text-xs font-bold text-zinc-300">{isEnglish ? 'Receiving account for unlinked jars' : 'Tài khoản nhận tiền của hũ chưa liên kết'}</label>
+                <select id="salary-unlinked-account" value={unlinkedAccountId} onChange={e => setUnlinkedAccountId(e.target.value)} disabled={saving} className="w-full rounded-xl border border-zinc-700 bg-[#1c1c20] p-3 text-sm text-white">
+                  <option value="">{isEnglish ? 'Select a saved account' : 'Chọn tài khoản đã lưu'}</option>
+                  {bankAccounts.map(a => <option key={a.id} value={a.id}>{a.bankName} · {a.accountNumber}</option>)}
+                </select>
+              </>}
+              <label htmlFor="salary-received-date" className="block text-xs font-bold text-zinc-300">{isEnglish ? 'Salary received date' : 'Ngày nhận lương'}</label>
+              <input id="salary-received-date" type="date" min={cycleStart} max={toLocalDateKey(new Date())} value={salaryDate} onChange={e => setSalaryDate(e.target.value)} disabled={saving} className="w-full rounded-xl border border-zinc-700 bg-[#1c1c20] p-3 text-base text-white" />
+              {salaryReceipt && <p className="text-xs text-amber-300">{isEnglish ? 'This cycle already has a salary receipt. Saving replaces that receipt and its transfers; it does not add salary again.' : 'Chu kỳ này đã ghi nhận lương. Lưu lại sẽ điều chỉnh giao dịch và chuyển khoản của lần đó, không cộng lương thêm lần nữa.'}</p>}
+              <div className="space-y-1 text-xs text-zinc-300">
+                <p>{salaryAccountId
+                  ? (isEnglish ? 'Account increases after allocation (shared jars are combined; unlinked jars stay in the salary account):' : 'Tiền tăng thêm ở từng tài khoản (hũ dùng chung được cộng gộp; hũ chưa liên kết giữ tiền ở tài khoản nhận lương):')
+                  : (isEnglish ? 'Direct receipts by allocated account (shared jars are combined):' : 'Thu trực tiếp theo tài khoản phân bổ (cộng gộp các hũ dùng chung):')}</p>
+                {[...receivingAccounts].filter(([, amount]) => amount > 0).map(([id, amount]) => {
+                  const account = bankAccounts.find(a => a.id === id);
+                  return <div key={id} className="flex justify-between gap-2"><span>{account ? `${account.bankName} · ${account.accountNumber}` : (isEnglish ? 'Receiving account not selected' : 'Chưa chọn tài khoản nhận')}</span><span className="font-mono">+{formatVND(amount, isAmountsHidden)}</span></div>;
+                })}
+              </div>
+            </>}
+            {!bankAccounts.length && <p className="text-xs text-amber-300">{isEnglish ? 'Add a saved bank account to record salary. Budget-only allocation is still available.' : 'Thêm tài khoản ngân hàng đã lưu để ghi nhận lương. Bạn vẫn có thể chỉ cập nhật hạn mức.'}</p>}
+          </div>
           {/* Income Input Section */}
           <div className="bg-[#121214] p-5 rounded-2xl border border-zinc-800 space-y-3">
             <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300">
@@ -93,6 +195,7 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
             </label>
             <div className="relative">
               <CurrencyInput
+                id="salary-income-amount"
                 value={incomeInput || ''}
                 onValueChange={(value) => setIncomeInput(value === '' ? 0 : value)}
                 placeholder={isAmountsHidden ? '••••••••' : '20.000.000'}
@@ -166,11 +269,12 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/80 text-xs">
-                  {tempJars.map((jar) => {
-                    const allocatedAmount = Math.round((incomeInput * jar.percentage) / 100);
+                  {tempJars.map((jar, index) => {
+                    const allocatedAmount = amounts[index];
                     const carryoverAmount = getCarryoverTotal(jar);
                     const transferredAmount = getTransferredInTotal(jar);
-                    const existingAmount = carryoverAmount + transferredAmount;
+                    const otherIncome = recordSalary ? additionalIncomeAllocations.filter(a => a.jarId === jar.id).reduce((sum, a) => sum + a.amount, 0) : 0;
+                    const existingAmount = carryoverAmount + transferredAmount + otherIncome;
                     return (
                       <tr key={jar.id} className="hover:bg-[#1c1c20] transition-colors">
                         <td className="p-3.5 font-semibold text-zinc-200">
@@ -211,8 +315,8 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
                         <td className="p-3.5 text-right font-mono">
                           <div className="font-black text-emerald-300">{formatVND(allocatedAmount + existingAmount, isAmountsHidden)}</div>
                           {existingAmount > 0 && (
-                            <div className="mt-0.5 text-[10px] text-zinc-500">
-                              gồm tiền dư/chuyển {formatVND(existingAmount, isAmountsHidden)}
+                            <div data-no-translate="true" className="mt-0.5 text-[10px] text-zinc-500">
+                              {isEnglish ? 'includes carryover/transfers and other receipts' : 'gồm dư/chuyển và khoản thu khác'} {formatVND(existingAmount, isAmountsHidden)}
                             </div>
                           )}
                         </td>
@@ -226,11 +330,13 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
         </div>
 
         {/* Footer Actions */}
+        {error && <p role="alert" data-no-translate="true" className="px-5 py-3 text-sm text-rose-400">{error}</p>}
         <div className="bg-[#121214] p-5 border-t border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center space-x-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={onClose}
+              disabled={saving}
               className="flex-1 sm:flex-none px-4 py-2.5 rounded-2xl border border-zinc-700 text-zinc-300 font-bold text-xs hover:bg-zinc-800 transition-colors"
             >
               Hủy
@@ -238,6 +344,7 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
             <button
               type="button"
               onClick={handleSave}
+              disabled={saving}
               className="flex-1 sm:flex-none px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all shadow-lg shadow-indigo-600/20 flex items-center justify-center space-x-2"
             >
               <CheckCircle2 className="w-4 h-4" />

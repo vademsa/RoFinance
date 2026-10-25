@@ -1,5 +1,5 @@
 import { BankAccount, Jar, Transaction } from '../types';
-import { isBankOnlyIncome, isBankOnlyExpense, isBankOnlyTransaction } from '../../shared/transactions';
+import { isBankOnlyIncome, isBankOnlyExpense, isBankOnlyTransaction, isBankTransfer } from '../../shared/transactions';
 import { findBankByCode } from '../../shared/banks';
 
 const BANK_CODE_ALIASES: Record<string, string> = {
@@ -165,8 +165,11 @@ export function getBankAccountBalance(jars: Jar[], account: BankAccount, transac
 }
 
 export function getAccountTransactionNet(transactions: Transaction[], accountId: string) {
-  return transactions.filter(t => t.bankAccountId === accountId && (t.type === 'income' || t.type === 'expense'))
-    .reduce((sum, t) => sum + (t.type === 'expense' ? -t.amount : t.amount), 0);
+  return transactions.reduce((sum, t) => {
+    if (isBankTransfer(t)) return sum + (t.transferToBankAccountId === accountId ? t.amount : 0) - (t.bankAccountId === accountId ? t.amount : 0);
+    return sum + (t.bankAccountId === accountId && (t.type === 'income' || t.type === 'expense')
+      ? (t.type === 'expense' ? -t.amount : t.amount) : 0);
+  }, 0);
 }
 
 export function initializeAccountLedger(jars: Jar[], account: BankAccount, transactions: Transaction[]): BankAccount {

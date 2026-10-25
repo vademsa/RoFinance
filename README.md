@@ -54,6 +54,18 @@ Google requires an OAuth web client. Apple requires a Service ID with Sign in wi
 
 ## Build and checks
 
+“Update Income” can record the current cycle's salary into a saved receiving
+account, then record internal transfers to the accounts linked to the jars.
+Jars sharing an account are combined; funds for unlinked jars stay in the salary
+account. If the salary account is not tracked, choose the untracked-source option:
+the allocated accounts receive income directly, with no fictitious source account
+or internal transfers. Select a receiving account for any unlinked jars.
+Total bank money increases by the salary exactly once. Saving again
+updates the same cycle's receipt/transfers rather than adding another salary.
+Transfers do not count as income or expenses. “Adjust budget limits only” changes
+limits without changing bank money. These are bookkeeping entries, not bank payment
+instructions; the app does not initiate real transfers.
+
 ```bash
 npm run lint
 npm run build

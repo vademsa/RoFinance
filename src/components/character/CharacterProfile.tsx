@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Toast } from '../Toast';
 import { ArrowLeft, Check, Gift, RefreshCw, ShieldCheck, Shirt } from 'lucide-react';
 import { CHARACTERS, CHARACTER_GENDERS, COSMETICS, DEFAULT_EQUIPMENT, DRAW_COST,
   assessFinance, validateEquipment, vietnamDate, type CharacterId, type CharacterGender, type Equipment, type FinanceForCharacter, type ItemSlot } from '../../../shared/character';
@@ -99,7 +100,7 @@ export function CharacterProfile({ controller, finance, language, onBack, onAcco
     </div>
     {error && <div className="character-message character-error" role="alert">{characterError(error, language)}{' '}
       <button type="button" className="underline font-bold" onClick={() => void controller.refresh()} disabled={busy || loading}>{t('Tải lại', 'Reload')}</button></div>}
-    {message && <p className="character-message" role="status">{message}</p>}
+    {message && <Toast noTranslate eventKey={message} onDismiss={() => setMessage('')}>{message}</Toast>}
     {!profile ? <div className="character-note" role="status">{loading ? t('Đang mở hồ sơ nhân vật…', 'Opening your character profile…') : t('Hồ sơ nhân vật chưa sẵn sàng. Bạn vẫn có thể dùng các chức năng tài chính.', 'Your character profile is unavailable. Financial features remain available.')}</div> : <div className="character-layout">
       <aside className="character-stack">
         <div className="character-card">
@@ -183,7 +184,7 @@ export function CharacterProfile({ controller, finance, language, onBack, onAcco
       confirmed={drawReveal.confirmed} result={drawReveal.result} onSettled={drawReveal.complete} onClose={drawReveal.dismiss} returnFocus={drawReturnFocus.current}
       onWardrobe={(itemSlot) => { setSlot(itemSlot); setTab('wardrobe'); }}/>}
     {catalogueOpen && profile && <RewardCatalogueDialog profile={profile} language={language} characterId={draftCharacter} equipped={draftEquipment}
-      busy={busy || loading || drawReveal.opening} pending={pending} message={error ? characterError(error, language) : message}
+      busy={busy || loading || drawReveal.opening} pending={pending} message={error ? characterError(error, language) : undefined}
       onClose={() => setCatalogueOpen(false)} onPreview={(id) => preview(id, true)} onExchange={(itemId) => void exchange(itemId)}/>}
     {materialOpen && profile && <DuplicateWorkshop key={`${materialOpen.kind}:${materialOpen.itemId}`} {...materialOpen} profile={profile} language={language}
       busy={busy || loading || drawReveal.opening} pending={pending} message={error ? characterError(error, language) : undefined}

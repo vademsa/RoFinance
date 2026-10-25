@@ -1,4 +1,5 @@
 import type { Jar, Transaction } from '../types';
+import { isBankTransfer } from '../../shared/transactions';
 import {
   CASH_PAYMENT_METHOD,
   findPaymentMethodByCode,
@@ -13,7 +14,7 @@ export function migrateTransactionPaymentMethods(
   const jarById = new Map(jars.map((jar) => [jar.id, jar]));
   const migratedItems = transactions.map((transaction) => {
     const sourceJar = jarById.get(transaction.jarId);
-    const method = transaction.type === 'transfer'
+    const method = transaction.type === 'transfer' && !isBankTransfer(transaction)
       ? findPaymentMethodByCode(sourceJar?.bankCode) || CASH_PAYMENT_METHOD
       : findPaymentMethodByCode(transaction.paymentMethodCode) ||
         findPaymentMethodByName(transaction.bankName) ||

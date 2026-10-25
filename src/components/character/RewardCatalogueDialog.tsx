@@ -63,7 +63,7 @@ export function RewardCatalogueDialog({ profile, language, characterId, equipped
       <ClothingGenderFilter value={gender} language={language} onChange={value => { setGender(value); changePage(1); }}/>
       <details className="reward-secret-notice"><summary><HelpCircle size={16}/><strong>{t(`${secretItems.length} vật phẩm bí mật`, `${secretItems.length} secret items`)}</strong></summary><div>
         <p>{t('Tên và hình chỉ hiện sau khi sở hữu.', 'Names and artwork appear only after you own them.')}</p></div></details>
-      {message && <p className="character-message" role="status">{message}</p>}
+      {message && <p className="character-message character-error" role="alert">{message}</p>}
       <div className="reward-prize-grid">
         {pagination.items.map((item) => {
           const owned = profile.ownedItemIds.includes(item.id);

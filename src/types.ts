@@ -54,6 +54,9 @@ export interface Transaction {
   amount: number;
   jarId: string;
   bankAccountId?: string; // Direct bank income/expense uses an empty jarId and no allocations.
+  transferToBankAccountId?: string; // Internal cash transfer; never changes jar limits or income/expense totals.
+  salaryCycleStart?: string; // Links the salary receipt(s) and any internal transfers for a financial cycle.
+  salarySource?: 'external'; // Salary from an untracked account, received directly by allocated accounts.
   category: string;
   categoryId?: string;
   categoryIcon?: CategoryIconKey;

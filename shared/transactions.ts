@@ -13,3 +13,9 @@ export function isBankOnlyExpense(transaction: { type?: unknown; bankAccountId?:
 export function isBankOnlyTransaction(transaction: { type?: unknown; bankAccountId?: unknown; jarId?: unknown }) {
   return isBankOnlyIncome(transaction) || isBankOnlyExpense(transaction);
 }
+
+export function isBankTransfer(transaction: { type?: unknown; bankAccountId?: unknown; transferToBankAccountId?: unknown; jarId?: unknown }) {
+  return transaction.type === 'transfer' && transaction.jarId === '' &&
+    typeof transaction.bankAccountId === 'string' && transaction.bankAccountId.length > 0 &&
+    typeof transaction.transferToBankAccountId === 'string' && transaction.transferToBankAccountId.length > 0;
+}

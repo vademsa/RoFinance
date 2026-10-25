@@ -4,7 +4,7 @@ import {
   findPaymentMethodByName,
 } from '../shared/banks';
 import { CUSTOM_JAR_PLAN_ID, findJarPlan, JAR_PLAN_DEFINITIONS } from '../src/constants/jarPlans';
-import { isBankOnlyIncome, isBankOnlyExpense } from '../shared/transactions';
+import { isBankOnlyIncome, isBankOnlyExpense, isBankTransfer } from '../shared/transactions';
 
 type DataRecord = Record<string, unknown>;
 
@@ -212,6 +212,34 @@ function validateTransactions(
     if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000_000_000) {
       return { error: 'Số tiền giao dịch không hợp lệ' };
     }
+    if (rawTransaction.salaryCycleStart !== undefined &&
+      (!isDateKey(rawTransaction.salaryCycleStart) || !isDateKey(rawTransaction.date) ||
+        String(rawTransaction.salaryCycleStart) > String(rawTransaction.date) ||
+        !Number.isSafeInteger(amount) ||
+        !(rawTransaction.type === 'income' && rawTransaction.jarId !== '' || isBankTransfer(rawTransaction)))) {
+      return { error: 'Giao dịch phân bổ lương không hợp lệ' };
+    }
+    if (rawTransaction.salarySource !== undefined &&
+      (rawTransaction.salarySource !== 'external' || rawTransaction.salaryCycleStart === undefined ||
+        rawTransaction.type !== 'income')) return { error: 'Nguồn nhận lương không hợp lệ' };
+    if (rawTransaction.transferToBankAccountId !== undefined || isBankTransfer(rawTransaction)) {
+      const source = bankAccounts.find(a => a.id === rawTransaction.bankAccountId);
+      const destination = bankAccounts.find(a => a.id === rawTransaction.transferToBankAccountId);
+      if (!isBankTransfer(rawTransaction) || !source || !destination || source.id === destination.id ||
+        rawTransaction.salaryCycleStart === undefined || rawTransaction.allocations !== undefined ||
+        rawTransaction.transferToJarId !== undefined || !hasSafeText(rawTransaction.category, 100) ||
+        !hasSafeText(rawTransaction.description, 500) || !isDateKey(rawTransaction.date)) {
+        return { error: 'Chuyển khoản nội bộ phải dùng hai tài khoản đã lưu khác nhau' };
+      }
+      value.push({ id: rawTransaction.id, type: 'transfer', jarId: '', amount,
+        bankAccountId: source.id, transferToBankAccountId: destination.id,
+        salaryCycleStart: rawTransaction.salaryCycleStart, date: rawTransaction.date,
+        category: rawTransaction.category, description: rawTransaction.description,
+        paymentMethodCode: source.bankCode, bankName: source.bankName,
+        sourceBankCode: source.bankCode, sourceAccountNumber: source.accountNumber,
+        destinationBankCode: destination.bankCode, recipientAccount: destination.accountNumber });
+      continue;
+    }
     if (rawTransaction.bankAccountId !== undefined) {
       const account = bankAccounts.find((item) => item.id === rawTransaction.bankAccountId);
       const isBankIncome = isBankOnlyIncome(rawTransaction);
@@ -325,12 +353,40 @@ function validateTransactions(
       bankName: method.shortName,
     });
   }
+  const salaryCycles = new Map<unknown, DataRecord[]>();
+  for (const transaction of value) if (transaction.salaryCycleStart !== undefined) {
+    const group = salaryCycles.get(transaction.salaryCycleStart) || [];
+    group.push(transaction);
+    salaryCycles.set(transaction.salaryCycleStart, group);
+  }
+  for (const group of salaryCycles.values()) {
+    const receipts = group.filter(t => t.type === 'income');
+    const salary = receipts[0];
+    const transfers = group.filter(isBankTransfer);
+    if (group.some(t => t.salarySource === 'external')) {
+      const total = receipts.reduce((sum, t) => sum + Number(t.amount), 0);
+      const allocationIds = receipts.flatMap(t => Array.isArray(t.allocations) ? t.allocations.filter(isRecord).map(a => a.jarId) : []);
+      if (transfers.length || receipts.length !== group.length ||
+        receipts.some(t => t.salarySource !== 'external' || !t.bankAccountId || !Array.isArray(t.allocations) || t.date !== salary.date) ||
+        new Set(receipts.map(t => t.bankAccountId)).size !== receipts.length ||
+        new Set(allocationIds).size !== allocationIds.length || !Number.isSafeInteger(total) || total > 1_000_000_000_000_000) {
+        return { error: 'Lương từ tài khoản chưa khai báo phải ghi thu trực tiếp, không kèm chuyển khoản nội bộ hoặc phân bổ trùng' };
+      }
+      continue;
+    }
+    if (receipts.length !== 1 || !salary.bankAccountId || !Array.isArray(salary.allocations) ||
+      transfers.some(t => t.bankAccountId !== salary.bankAccountId || t.date !== salary.date) ||
+      new Set(transfers.map(t => t.transferToBankAccountId)).size !== transfers.length ||
+      transfers.reduce((sum, t) => sum + Number(t.amount), 0) > Number(salary.amount)) {
+      return { error: 'Lương chỉ được ghi nhận một lần và tổng chuyển nội bộ không được vượt lương' };
+    }
+  }
   const rawById = new Map(
     (raw as unknown[]).filter(isRecord).map((transaction) => [transaction.id, transaction])
   );
   for (const existing of existingById.values()) {
     const referencesArchivedJar =
-      (!isBankOnlyIncome(existing) && !isBankOnlyExpense(existing) && !activeJarIds.has(existing.jarId as string)) ||
+      (!isBankOnlyIncome(existing) && !isBankOnlyExpense(existing) && !isBankTransfer(existing) && !activeJarIds.has(existing.jarId as string)) ||
       (typeof existing.transferToJarId === 'string' && !activeJarIds.has(existing.transferToJarId));
     if (referencesArchivedJar) {
       const submitted = rawById.get(existing.id);
@@ -551,8 +607,11 @@ export function validateAndNormalizeUserData(
   // let an older client silently strip the independent baseline after migration.
   const previousAccounts = Array.isArray(existingData.bankAccounts) ? existingData.bankAccounts.filter(isRecord) : [];
   const previousTransactions = Array.isArray(existingData.transactions) ? existingData.transactions.filter(isRecord) : [];
-  const net = (items: DataRecord[], id: unknown) => items.filter(t => t.bankAccountId === id && (t.type === 'income' || t.type === 'expense'))
-    .reduce((sum, t) => sum + (t.type === 'expense' ? -Number(t.amount) : Number(t.amount)), 0);
+  const net = (items: DataRecord[], id: unknown) => items.reduce((sum, t) => {
+    if (isBankTransfer(t)) return sum + (t.transferToBankAccountId === id ? Number(t.amount) : 0) - (t.bankAccountId === id ? Number(t.amount) : 0);
+    return sum + (t.bankAccountId === id && (t.type === 'income' || t.type === 'expense')
+      ? (t.type === 'expense' ? -Number(t.amount) : Number(t.amount)) : 0);
+  }, 0);
   for (const account of accountsResult.value) {
     const old = previousAccounts.find(a => a.id === account.id);
     if (old?.openingBalance !== undefined && account.openingBalance === undefined) return { error: 'Dữ liệu tài khoản đã đổi sang sổ độc lập. Vui lòng tải lại ứng dụng trước khi lưu.' };
@@ -561,7 +620,11 @@ export function validateAndNormalizeUserData(
       account.openingBalance = Number(source.balance) - net(previousTransactions, account.id);
       account.balanceReconciled = false;
     }
-    const balance = Math.max(0, Math.round(Number(account.openingBalance) + net(transactionsResult.value, account.id)));
+    const ledgerBalance = Number(account.openingBalance) + net(transactionsResult.value, account.id);
+    const salaryBefore = net(previousTransactions.filter(t => t.salaryCycleStart !== undefined), account.id);
+    const salaryAfter = net(transactionsResult.value.filter(t => t.salaryCycleStart !== undefined), account.id);
+    if (salaryAfter < salaryBefore && ledgerBalance < 0) return { error: 'Không đủ số dư để điều chỉnh phân bổ lương đã ghi nhận. Vui lòng đối soát tài khoản trước.' };
+    const balance = Math.max(0, Math.round(ledgerBalance));
     if (!Number.isFinite(balance) || balance > 1_000_000_000_000_000 || Math.abs(Number(account.openingBalance)) > 1_000_000_000_000_000) return { error: 'Số dư sổ tài khoản vượt giới hạn hợp lệ' };
     account.balance = balance;
   }

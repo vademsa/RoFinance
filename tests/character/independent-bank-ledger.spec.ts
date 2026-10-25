@@ -32,7 +32,8 @@ test('personal spending chooses a real account independently; reallocating budge
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   await page.getByRole('button', { name: 'Manage jars', exact: true }).click();
   await page.getByRole('button', { name: 'Update Income', exact: true }).click();
-  await dialog.locator('input').first().fill('20000000');
+  await dialog.locator('#salary-entry-mode').selectOption('budget');
+  await dialog.locator('#salary-income-amount').fill('20000000');
   await dialog.getByRole('button', { name: /Apply.*Allocation|Áp Dụng Phân Bổ/i }).click();
   await expect.poll(() => fixture.finance().monthlyIncome).toBe(20000000);
   expect(fixture.finance().bankAccounts.find(a => a.id === 'bank-personal')?.balance).toBe(7000000);

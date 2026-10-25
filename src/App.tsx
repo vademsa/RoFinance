@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useCallback, useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Jar, Transaction, BankAccount, CryptoAsset, DebtItem, JarPlanSnapshot, MonthlyCycleSummary, SafetyInvestment, TransactionCategory } from './types';
-import { CalendarCheck2, LayoutTemplate, Sparkles, X } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import {
   DEFAULT_JARS,
   DEFAULT_BANK_ACCOUNTS,
@@ -27,6 +27,7 @@ import { CommunityPlansModal } from './components/CommunityPlansModal';
 import { communityApi } from './lib/communityApi';
 import { LegalPage } from './components/LegalPage';
 import { TranslationLayer } from './components/TranslationLayer';
+import { Toast } from './components/Toast';
 import { formatVND } from './utils/formatters';
 import {
   apiFetch, authApi, dataApi, exportToExcel, exportToPDFPrint,
@@ -40,12 +41,14 @@ import {
 } from './lib/preferences';
 import {
   deduplicateBankAccounts,
+  bankAccountKey,
   editBankAccountDetails,
   getBankOpeningBalance,
   syncBankAccountsWithJars,
 } from './utils/bankAccounts';
 import { isBankOnlyIncome, isBankOnlyTransaction } from '../shared/transactions';
 import { syncBankTransactionSummaries } from './utils/bankIncome';
+import { allocateSalary, type SalaryReceiptInput } from './utils/salaryAllocation';
 import {
   adjustCompletedCycleIncome,
   applyCurrentCycleSpending,
@@ -871,16 +874,44 @@ export default function App() {
     });
   };
 
-  const handleApplyAllocation = (newIncome: number, updatedJars: Jar[]) => {
-    if (updatedJars.some((updated) =>
+  const currentSalaryReceipts = transactions.filter(t => t.salaryCycleStart === activeCycleStart && t.type === 'income');
+  const currentSalary = currentSalaryReceipts.length ? { ...currentSalaryReceipts[0],
+    amount: currentSalaryReceipts.reduce((sum, t) => sum + t.amount, 0),
+    allocations: currentSalaryReceipts.flatMap(t => t.allocations || []),
+  } : undefined;
+  const externalSalaryFallback = currentSalaryReceipts.find(t => t.allocations?.some(a => {
+    const jar = jars.find(j => j.id === a.jarId);
+    return jar && !bankAccounts.some(b => bankAccountKey(b) === bankAccountKey(jar));
+  }))?.bankAccountId;
+  const otherCurrentIncomes = transactions.filter(t => t.type === 'income' && !isBankOnlyIncome(t) &&
+    !t.salaryCycleStart && t.date >= activeCycleStart && t.date <= toLocalDateKey(new Date()));
+  const handleApplyAllocation = async (newIncome: number, updatedJars: Jar[], receipt?: SalaryReceiptInput) => {
+    const ownerId = user.id;
+    const nextActiveJarPlanId = updatedJars.some((updated) =>
       jars.find((jar) => jar.id === updated.id)?.percentage !== updated.percentage
-    )) setActiveJarPlanId(CUSTOM_JAR_PLAN_ID);
-    setMonthlyIncome(newIncome);
-    setJars((current) => applyCurrentCycleSpending(
-      mergeJarCycleAllocationUpdates(current, updatedJars),
-      transactions,
-      preferences.monthlyResetDay,
-    ));
+    ) ? CUSTOM_JAR_PLAN_ID : activeJarPlanId;
+    const allocation = receipt ? allocateSalary({ income: newIncome, jars: updatedJars, accounts: bankAccounts,
+      transactions, receipt, resetDay: preferences.monthlyResetDay }) : null;
+    const nextTransactions = allocation?.transactions ?? transactions;
+    // Other personal receipts retain their own allocations, outside this salary.
+    const extraIncomes = receipt ? otherCurrentIncomes : [];
+    const nextIncome = receipt ? newIncome + extraIncomes.reduce((sum, t) => sum + t.amount, 0)
+      : currentSalary ? monthlyIncome : newIncome;
+    const withExtras = updatedJars.map(j => setJarCycleAllocation(j, (j.cycleAllocation ?? 0) +
+      extraIncomes.reduce((sum, t) => sum + (t.allocations?.find(a => a.jarId === j.id)?.amount ?? 0), 0)));
+    const nextJars = applyCurrentCycleSpending(mergeJarCycleAllocationUpdates(jars, withExtras), nextTransactions, preferences.monthlyResetDay);
+    const nextAccounts = allocation?.bankAccounts ?? bankAccounts;
+    await queueDataSave(ownerId, { monthlyIncome: nextIncome, jars: nextJars, archivedJars,
+      activeJarPlanId: nextActiveJarPlanId, jarPlanSnapshots, transactions: nextTransactions,
+      bankAccounts: nextAccounts, cryptoAssets, safetyInvestments, debtItems, isAmountsHidden,
+      preferences, activeCycleStart, monthlySummaries, customCategories });
+    if (currentUserIdRef.current !== ownerId) return;
+    setActiveJarPlanId(nextActiveJarPlanId);
+    setMonthlyIncome(nextIncome);
+    setJars(nextJars);
+    setTransactions(nextTransactions);
+    setBankAccounts(nextAccounts);
+    setDataError('');
   };
 
   const handleUpdateJar = async (updatedJar: Jar) => {
@@ -1213,12 +1244,20 @@ export default function App() {
       setDataError('Không tìm thấy giao dịch cần chỉnh sửa.');
       return false;
     }
+    if (previousTransaction.salaryCycleStart) {
+      setDataError('Hãy điều chỉnh lương tại Cập nhật thu để giữ đồng bộ các tài khoản.');
+      return false;
+    }
     return commitTransactionChange(previousTransaction, { ...updatedData, id });
   };
 
   const handleDeleteTransaction = (id: string) => {
     const transaction = transactions.find((item) => item.id === id);
     if (!transaction) return;
+    if (transaction.salaryCycleStart) {
+      setDataError('Giao dịch thuộc lần phân bổ lương. Hãy điều chỉnh tại Cập nhật thu để giữ đồng bộ các tài khoản.');
+      return;
+    }
     commitTransactionChange(transaction, null);
   };
 
@@ -1343,7 +1382,7 @@ export default function App() {
   };
 
   const handleDeleteBankAccount = (accountId: string) => {
-    if (transactions.some((transaction) => transaction.bankAccountId === accountId)) {
+    if (transactions.some((transaction) => transaction.bankAccountId === accountId || transaction.transferToBankAccountId === accountId)) {
       setDataError('Tài khoản này có giao dịch nhận tiền. Hãy xử lý các giao dịch liên quan trước khi xóa tài khoản.');
       return;
     }
@@ -1413,52 +1452,34 @@ export default function App() {
 
       {/* Main Container */}
       <main ref={mobileContentRef} className={`${isNativeApp ? 'mobile-app-content ' : ''}${isRefreshingData ? 'pointer-events-none ' : ''}relative mx-auto w-full max-w-7xl flex-1 px-2 pb-20 pt-3 sm:px-6 sm:pb-24 sm:pt-6 lg:px-8`}>
-        {dailyRewardNotice && <div data-no-translate="true" role="status" className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-4 text-sm text-indigo-300"><span>{preferences.language === 'en' ? '+20 draw points for logging an expense today!' : '+20 điểm quay thưởng vì đã ghi chi tiêu hôm nay!'}</span><button type="button" onClick={() => setDailyRewardNotice(false)} aria-label={preferences.language === 'en' ? 'Dismiss reward notification' : 'Đóng thông báo điểm thưởng'} className="min-h-11 min-w-11 cursor-pointer rounded-xl p-2"><X size={16}/></button></div>}
+        {dailyRewardNotice && <Toast noTranslate onDismiss={() => setDailyRewardNotice(false)} closeLabel={preferences.language === 'en' ? 'Dismiss reward notification' : 'Đóng thông báo điểm thưởng'}>{preferences.language === 'en' ? '+20 draw points for logging an expense today!' : '+20 điểm quay thưởng vì đã ghi chi tiêu hôm nay!'}</Toast>}
         {rolloverNotice && (
-          <div className="mb-4 flex items-start gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-emerald-50 shadow-lg shadow-emerald-950/10" role="status">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
-              <CalendarCheck2 className="h-5 w-5" />
-            </div>
+          <Toast eventKey={rolloverNotice} onDismiss={() => setRolloverNotice(null)} closeLabel="Đóng thông báo reset">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-black">Đã bắt đầu chu kỳ tài chính mới</p>
-              <p className="mt-1 text-xs leading-relaxed text-emerald-100/75">
+              <p className="mt-1 text-xs leading-relaxed">
                 Chu kỳ {rolloverNotice.cycleStart} – {rolloverNotice.cycleEnd} đã được tổng kết.
                 {' '}Đã chuyển tiếp {formatVND(rolloverNotice.carriedForward || 0, isAmountsHidden)} tiền chưa dùng sang các hũ của kỳ mới.
-                {' '}Giao dịch cũ vẫn được giữ trong mục Chi Tiêu và Thống Kê.
               </p>
               <button
                 type="button"
-                onClick={() => setActiveTab('analytics')}
-                className="mt-2 cursor-pointer text-xs font-bold text-emerald-300 underline decoration-emerald-400/40 underline-offset-4 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-400/60"
+                onClick={() => { selectTab('analytics'); setRolloverNotice(null); }}
+                className="mt-2 cursor-pointer text-xs font-bold underline underline-offset-4 focus-visible:outline focus-visible:outline-2"
               >
                 Xem tổng kết chu kỳ
               </button>
             </div>
-            <button
-              type="button"
-              aria-label="Đóng thông báo reset"
-              onClick={() => setRolloverNotice(null)}
-              className="cursor-pointer rounded-lg p-1.5 text-emerald-200/60 transition-colors hover:bg-emerald-500/15 hover:text-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-400/60"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+          </Toast>
         )}
         {planChangeNotice && (
-          <div className="mb-4 flex items-start gap-3 rounded-2xl border border-cyan-500/25 bg-cyan-500/10 p-4 text-cyan-100" role="status">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-300">
-              <LayoutTemplate className="h-5 w-5" />
-            </div>
+          <Toast eventKey={planChangeNotice} tone="info" onDismiss={() => setPlanChangeNotice(null)} closeLabel="Đóng thông báo đổi kiểu phân bổ">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-black">Đã áp dụng {planChangeNotice.name}</p>
-              <p className="mt-1 text-xs leading-relaxed text-cyan-100/75">
-                Đã lưu trữ {planChangeNotice.archivedCount} hũ và chuyển {formatVND(planChangeNotice.transferredAmount, isAmountsHidden)} tiền chưa chi. Cấu hình trước đó đã được lưu để có thể quay lại bất kỳ lúc nào.
+              <p className="mt-1 text-xs leading-relaxed">
+                Đã lưu trữ {planChangeNotice.archivedCount} hũ và chuyển {formatVND(planChangeNotice.transferredAmount, isAmountsHidden)} tiền chưa chi.
               </p>
             </div>
-            <button type="button" aria-label="Đóng thông báo đổi kiểu phân bổ" onClick={() => setPlanChangeNotice(null)} className="cursor-pointer rounded-lg p-1.5 text-cyan-200/60 hover:bg-cyan-500/15 hover:text-cyan-100">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+          </Toast>
         )}
         {/* Budget Alerts Banner */}
         {activeTab !== 'character' && (activeTab !== 'jars' || isJarManagementOpen) && <BudgetAlertsBanner
@@ -1485,7 +1506,7 @@ export default function App() {
             onManageJars={jarId => { setFocusedJarId(jarId); setIsJarManagementOpen(true); }}
             onManageAccounts={() => setIsBankAccountsModalOpen(true)}
             onAddTransaction={(date, type) => { setSelectedTransactionJarId(null); setInitialTransactionDate(date); setInitialTransactionType(type); setEditingTransaction(null); setIsTransactionModalOpen(true); }}
-            onEditTransaction={transaction => { setSelectedTransactionJarId(transaction.jarId); setInitialTransactionDate(transaction.date); setEditingTransaction(transaction); setIsTransactionModalOpen(true); }}/>
+            onEditTransaction={transaction => { if (transaction.salaryCycleStart) { if (transaction.salaryCycleStart !== activeCycleStart) { setDataError('Lương thuộc chu kỳ cũ được giữ nguyên; không thể sửa bằng phân bổ chu kỳ hiện tại.'); return; } setIsIncomeModalOpen(true); return; } setSelectedTransactionJarId(transaction.jarId); setInitialTransactionDate(transaction.date); setEditingTransaction(transaction); setIsTransactionModalOpen(true); }}/>
         </Suspense>}
         {activeTab === 'jars' && isJarManagementOpen && (
           <><div data-no-translate="true" className="mb-4 flex items-center justify-between gap-3"><h1 className="text-lg font-black text-white">{preferences.language === 'en' ? 'Manage financial jars' : 'Quản lý hũ tài chính'}</h1><button type="button" onClick={() => { setIsJarManagementOpen(false); setFocusedJarId(undefined); }} className="min-h-11 cursor-pointer rounded-xl border border-zinc-700 px-3 py-2 text-xs font-bold text-zinc-200 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">{preferences.language === 'en' ? 'Back to overview' : 'Về tổng quan'}</button></div>
@@ -1518,6 +1539,10 @@ export default function App() {
             customCategories={customCategories}
             onDeleteTransaction={handleDeleteTransaction}
             onEditTransaction={(transaction) => {
+              if (transaction.salaryCycleStart) {
+                if (transaction.salaryCycleStart !== activeCycleStart) { setDataError('Lương thuộc chu kỳ cũ được giữ nguyên; không thể sửa bằng phân bổ chu kỳ hiện tại.'); return; }
+                setIsIncomeModalOpen(true); return;
+              }
               setSelectedTransactionJarId(transaction.jarId);
               setInitialTransactionDate(transaction.date);
               setEditingTransaction(transaction);
@@ -1620,6 +1645,11 @@ export default function App() {
         onClose={() => setIsIncomeModalOpen(false)}
         jars={jars}
         currentIncome={monthlyIncome}
+        bankAccounts={bankAccounts}
+        salaryReceipt={currentSalary}
+        externalFallbackAccountId={externalSalaryFallback}
+        additionalIncomeAllocations={otherCurrentIncomes.flatMap(t => t.allocations || [])}
+        cycleStart={activeCycleStart}
         isAmountsHidden={isAmountsHidden}
         onApplyAllocation={handleApplyAllocation}
         onOpenDebtModal={() => {
