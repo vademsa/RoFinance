@@ -135,7 +135,7 @@ export function recalculateJarsWithDebt(
   const debtJar = currentJars.find((j) => j.code === 'DEBT');
   // A no-debt template intentionally has no DEBT jar. Keep its allocation intact
   // instead of reserving a hidden percentage that makes the visible total < 100%.
-  if (!debtJar) return currentJars.map((jar) => ({ ...jar }));
+  if (!debtJar || !Number.isFinite(monthlyIncome) || monthlyIncome <= 0) return currentJars.map((jar) => ({ ...jar }));
   const fixedAmounts = normalizedOptions.fixedAmounts || {};
   const requestedAffectedCodes =
     strategy === 'FFA'
@@ -206,7 +206,9 @@ export function recalculateJarsWithDebt(
     monthlyIncome > 0 ? (totalMonthlyDebtPayment / monthlyIncome) * 100 : 0;
   const debtUnits = Math.min(
     Math.max(0, 10000 - fixedTotalUnits),
-    Math.max(0, Math.round(rawDebtPercent * 100))
+    // Round up the reserved percentage so a two-decimal rate cannot silently
+    // underfund the remaining monthly payment.
+    Math.max(0, Math.ceil(rawDebtPercent * 100 - 1e-8))
   );
   const debtPercent = debtUnits / 100;
   const distributableUnits = Math.max(0, 10000 - fixedTotalUnits - debtUnits);

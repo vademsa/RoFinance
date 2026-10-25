@@ -1,9 +1,10 @@
 import * as XLSX from 'xlsx';
-import { Jar, Transaction } from '../types';
+import { BankAccount, Jar, Transaction } from '../types';
 import { formatVND, formatDateVI } from './formatters';
 import { convertVndForDisplay, getRuntimePreferences } from '../lib/preferences';
-import type { AnalyticsCycle } from './analytics';
-import { isBankOnlyIncome } from '../../shared/transactions';
+import { getCategoryTotals, type AnalyticsCycle } from './analytics';
+import { addNativeExcelCharts, type ExcelChart } from './excelCharts';
+import { isBankOnlyIncome, isBankOnlyExpense, isBankOnlyTransaction } from '../../shared/transactions';
 
 const escapeHtml = (value: unknown) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -22,7 +23,7 @@ export function buildExportReportData(
   const reportTransactions = cycle?.transactions ?? transactions;
   const activeJarIds = new Set(jars.map((jar) => jar.id));
   const archivedCycleSpent = reportTransactions
-    .filter((transaction) => transaction.type === 'expense' && !activeJarIds.has(transaction.jarId))
+    .filter((transaction) => transaction.type === 'expense' && !isBankOnlyExpense(transaction) && !activeJarIds.has(transaction.jarId))
     .reduce((sum, transaction) => sum + transaction.amount, 0);
   const reportJars = cycle
     ? cycle.jars.map((row) => {
@@ -58,7 +59,7 @@ export function buildExportReportData(
   if (cycle) {
     const includedJarIds = new Set(cycle.jars.map((row) => row.jarId));
     const missingExpenseByJar = new Map<string, number>();
-    reportTransactions.filter((transaction) => transaction.type === 'expense').forEach((transaction) => {
+    reportTransactions.filter((transaction) => transaction.type === 'expense' && !isBankOnlyExpense(transaction)).forEach((transaction) => {
       if (includedJarIds.has(transaction.jarId)) return;
       missingExpenseByJar.set(
         transaction.jarId,
@@ -85,13 +86,15 @@ export function buildExportReportData(
   const detailedExpense = reportTransactions
     .filter((transaction) => transaction.type === 'expense')
     .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const bankExpenseTotal = reportTransactions.filter(isBankOnlyExpense).reduce((sum, tx) => sum + tx.amount, 0);
+  const totalSpent = cycle?.expense ?? detailedExpense;
   return {
     reportTransactions,
     reportJars,
     income: cycle?.income ?? monthlyIncome + reportTransactions.filter(isBankOnlyIncome).reduce((sum, transaction) => sum + transaction.amount, 0),
-    totalSpent: cycle?.expense ?? reportTransactions
-      .filter((transaction) => transaction.type === 'expense')
-      .reduce((sum, transaction) => sum + transaction.amount, 0),
+    totalSpent,
+    bankExpenseTotal,
+    totalJarSpent: Math.max(0, totalSpent - bankExpenseTotal),
     totalAllocated: cycle
       ? cycle.budget === null ? null : cycle.budget + archivedCurrentCycleSpent
       : jars.reduce((sum, jar) => sum + jar.targetBudget, 0) + archivedCycleSpent,
@@ -108,10 +111,11 @@ export function buildExcelWorkbook(
   monthlyIncome: number,
   jarRegistry: Jar[] = jars,
   cycle?: AnalyticsCycle,
+  bankAccounts: BankAccount[] = [],
 ) {
   const preferences = getRuntimePreferences();
   const currencyLabel = preferences.currency === 'USD' ? 'USD' : '₫';
-  const { reportJars, reportTransactions, income, totalSpent, totalAllocated, period, detailsIncomplete } =
+  const { reportJars, reportTransactions, income, totalSpent, totalJarSpent, bankExpenseTotal, totalAllocated, period, detailsIncomplete } =
     buildExportReportData(jars, transactions, monthlyIncome, jarRegistry, cycle);
   // 1. Sheet "Báo cáo Hũ Tài Chính"
   const jarsSummaryData = reportJars.map((jar) => {
@@ -141,25 +145,47 @@ export function buildExcelWorkbook(
     'Chủ Tài Khoản': '-',
     'Tỷ Lệ (%)': '100%',
     [`Hạn Mức Ngân Sách (${currencyLabel})`]: totalAllocated === null ? '' : convertVndForDisplay(totalAllocated),
-    [`Thực Tế Đã Chi (${currencyLabel})`]: convertVndForDisplay(totalSpent),
-    [`Số Tiền Còn Lại (${currencyLabel})`]: totalAllocated === null ? '' : convertVndForDisplay(totalAllocated - totalSpent),
-    'Tỷ Lệ Đã Chi (%)': totalAllocated === null || totalAllocated <= 0 ? '—' : `${((totalSpent / totalAllocated) * 100).toFixed(1)}%`,
-    'Trạng Thái': totalAllocated === null ? 'CHƯA CÓ HẠN MỨC' : totalSpent > totalAllocated ? 'VƯỢT HẠN MỨC TỔNG' : 'Trong Ngân Sách',
+    [`Thực Tế Đã Chi (${currencyLabel})`]: convertVndForDisplay(totalJarSpent),
+    [`Số Tiền Còn Lại (${currencyLabel})`]: totalAllocated === null ? '' : convertVndForDisplay(totalAllocated - totalJarSpent),
+    'Tỷ Lệ Đã Chi (%)': totalAllocated === null || totalAllocated <= 0 ? '—' : `${((totalJarSpent / totalAllocated) * 100).toFixed(1)}%`,
+    'Trạng Thái': totalAllocated === null ? 'CHƯA CÓ HẠN MỨC' : totalJarSpent > totalAllocated ? 'VƯỢT HẠN MỨC TỔNG' : 'Trong Ngân Sách',
   });
 
   // 2. Sheet "Lịch Sử Giao Dịch"
-  const transactionsData = reportTransactions.map((tx) => {
+  const typeOrder = { expense: 0, income: 1, transfer: 2 };
+  const sortedTransactions = [...reportTransactions].sort((a, b) => typeOrder[a.type] - typeOrder[b.type]
+    || (a.category.trim() || 'Chưa phân loại').localeCompare(b.category.trim() || 'Chưa phân loại', 'vi')
+    || b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  const transactionsData: Record<string, string | number>[] = [];
+  const transactionRowInfo: XLSX.RowInfo[] = [{}];
+  const subtotals: { row: number; first: number; last: number }[] = [];
+  let groupFirst = 2, groupAmount = 0;
+  sortedTransactions.forEach((tx, index) => {
     const jar = jarRegistry.find((j) => j.id === tx.jarId);
-    return {
+    const account = bankAccounts.find(account => account.id === tx.bankAccountId);
+    const category = tx.category.trim() || 'Chưa phân loại';
+    transactionsData.push({
       'Mã Giao Dịch': tx.id,
       'Ngày': formatDateVI(tx.date),
       'Loại': tx.type === 'income' ? 'Thu nhập' : tx.type === 'expense' ? 'Chi tiêu' : 'Chuyển tiền',
-      'Hũ Tài Chính': isBankOnlyIncome(tx) ? 'Không phân bổ' : jar ? `${jar.name} (${jar.code})` : 'Chưa phân loại',
-      'Danh Mục': tx.category,
+      'Hũ Tài Chính': isBankOnlyTransaction(tx) ? (isBankOnlyExpense(tx) ? 'Ngoài hũ' : 'Không phân bổ') : jar ? `${jar.name} (${jar.code})` : 'Chưa phân loại',
+      'Danh Mục': category,
       [`Số Tiền (${currencyLabel})`]: convertVndForDisplay(tx.amount),
-      'Ngân Hàng': tx.bankName || jar?.bankName || '-',
+      'Ngân Hàng': account?.bankName || (tx.paymentMethodCode === 'CASH' ? 'Tiền mặt' : tx.bankName || tx.legacyPaymentLabel || '-'),
       'Ghi Chú': tx.description,
-    };
+      'Tài Khoản Nguồn': account?.accountNumber || tx.sourceAccountNumber || '',
+    });
+    transactionRowInfo.push({ level: 1 });
+    groupAmount += convertVndForDisplay(tx.amount);
+    const next = sortedTransactions[index + 1];
+    if (!next || next.type !== tx.type || (next.category.trim() || 'Chưa phân loại') !== category) {
+      const row = transactionsData.length + 2;
+      subtotals.push({ row, first: groupFirst, last: row - 1 });
+      transactionsData.push({ 'Mã Giao Dịch': 'TỔNG DANH MỤC', 'Ngày': '', 'Loại': tx.type === 'expense' ? 'Chi tiêu' : tx.type === 'income' ? 'Thu nhập' : 'Chuyển tiền',
+        'Hũ Tài Chính': '', 'Danh Mục': category, [`Số Tiền (${currencyLabel})`]: groupAmount, 'Ngân Hàng': '', 'Ghi Chú': '', 'Tài Khoản Nguồn': '' });
+      transactionRowInfo.push({ level: 0 });
+      groupFirst = row + 1; groupAmount = 0;
+    }
   });
 
   const wb = XLSX.utils.book_new();
@@ -167,18 +193,20 @@ export function buildExcelWorkbook(
     { 'Thông tin': 'Chu kỳ báo cáo', 'Giá trị': period || 'Chu kỳ hiện tại' },
     { 'Thông tin': 'Tổng thu', 'Giá trị': convertVndForDisplay(income) },
     { 'Thông tin': 'Tổng chi', 'Giá trị': convertVndForDisplay(totalSpent) },
+    { 'Thông tin': 'Chi ngoài hũ', 'Giá trị': convertVndForDisplay(bankExpenseTotal) },
     {
       'Thông tin': 'Chi tiết giao dịch',
       'Giá trị': detailsIncomplete
         ? 'Không đầy đủ: tổng chi lịch sử có thể cao hơn các giao dịch còn lưu.'
         : 'Đầy đủ theo dữ liệu hiện có.',
     },
+    { 'Thông tin': 'Dòng tiền ròng', 'Giá trị': convertVndForDisplay(income - totalSpent) },
   ]);
   const wsJars = XLSX.utils.json_to_sheet(jarsSummaryData);
   const wsTx = XLSX.utils.json_to_sheet(transactionsData);
   const currencyNumberFormat =
     preferences.currency === 'USD' ? '$#,##0.00' : '#,##0 [$₫-vi-VN]';
-  for (const address of ['B3', 'B4']) {
+  for (const address of ['B3', 'B4', 'B5', 'B7']) {
     const cell = wsOverview[address];
     if (cell && typeof cell.v === 'number') {
       cell.t = 'n';
@@ -201,6 +229,9 @@ export function buildExcelWorkbook(
       cell.z = currencyNumberFormat;
     }
   }
+  for (const group of subtotals) wsTx[`F${group.row}`].f = `SUM(F${group.first}:F${group.last})`;
+  wsTx['!rows'] = transactionRowInfo;
+  wsTx['!outline'] = { above: false };
 
   // Set column widths
   wsOverview['!cols'] = [{ wch: 25 }, { wch: 82 }];
@@ -227,13 +258,70 @@ export function buildExcelWorkbook(
     { wch: 18 },
     { wch: 18 },
     { wch: 35 },
+    { wch: 22 },
   ];
 
   XLSX.utils.book_append_sheet(wb, wsOverview, 'Tổng Quan');
   XLSX.utils.book_append_sheet(wb, wsJars, 'Báo Cáo Hũ Tài Chính');
   XLSX.utils.book_append_sheet(wb, wsTx, 'Lịch Sử Giao Dịch');
 
+  const categoryData = (['expense', 'income'] as const).flatMap(type => {
+    const categories = getCategoryTotals(reportTransactions, type);
+    const total = categories.reduce((sum, category) => sum + category.amount, 0);
+    return categories.map(category => ({
+      'Loại': type === 'expense' ? 'Chi tiêu' : 'Thu nhập', 'Danh Mục': category.name,
+      'Số Giao Dịch': category.count, [`Số Tiền (${currencyLabel})`]: convertVndForDisplay(category.amount), 'Tỷ Trọng': total > 0 ? category.amount / total : 0,
+    }));
+  });
+  const wsCategories = XLSX.utils.json_to_sheet(categoryData, { header: ['Loại', 'Danh Mục', 'Số Giao Dịch', `Số Tiền (${currencyLabel})`, 'Tỷ Trọng'] });
+  wsCategories['!cols'] = [{ wch: 15 }, { wch: 45 }, { wch: 18 }, { wch: 24 }, { wch: 16 }];
+  for (let row = 2; row <= categoryData.length + 1; row++) {
+    wsCategories[`D${row}`].z = currencyNumberFormat;
+    wsCategories[`E${row}`].z = '0.0%';
+  }
+  if (categoryData.length) wsCategories['!autofilter'] = { ref: wsCategories['!ref']! };
+  XLSX.utils.book_append_sheet(wb, wsCategories, 'Danh Mục Thu Chi');
+
+  const wsCharts = XLSX.utils.aoa_to_sheet([
+    ['RoFinance · Biểu đồ tài chính'], ['Chu kỳ', period || 'Chu kỳ hiện tại'],
+    ['Tỷ trọng danh mục chỉ tính các giao dịch đã ghi. Chuyển hũ không tính là thu/chi.'],
+    ['Chỉ số', `Giá trị (${currencyLabel})`], ['Tổng thu', convertVndForDisplay(income)], ['Tổng chi', convertVndForDisplay(totalSpent)], ['Dòng tiền ròng', convertVndForDisplay(income - totalSpent)],
+    [], ['Chi tiết giao dịch', detailsIncomplete ? 'Lịch sử chưa đủ chi tiết; xem Tổng Quan.' : 'Đầy đủ theo dữ liệu hiện có.'],
+    ['Danh mục thu', categoryData.some(row => row['Loại'] === 'Thu nhập') ? 'Xem biểu đồ và bảng Danh Mục Thu Chi.' : 'Chưa có giao dịch thu chi tiết.'],
+    ['Danh mục chi', categoryData.some(row => row['Loại'] === 'Chi tiêu') ? 'Xem biểu đồ và bảng Danh Mục Thu Chi.' : 'Chưa có giao dịch chi chi tiết.'],
+  ]);
+  for (const row of [5, 6, 7]) wsCharts[`B${row}`].z = currencyNumberFormat;
+  wsCharts['!cols'] = [{ wch: 25 }, { wch: 24 }, { wch: 5 }, ...Array.from({ length: 22 }, () => ({ wch: 11 }))];
+  XLSX.utils.book_append_sheet(wb, wsCharts, 'Biểu Đồ');
+
   return wb;
+}
+
+export function buildExcelFile(jars: Jar[], transactions: Transaction[], monthlyIncome: number, jarRegistry: Jar[] = jars, cycle?: AnalyticsCycle, bankAccounts: BankAccount[] = []): Uint8Array {
+  const workbook = buildExcelWorkbook(jars, transactions, monthlyIncome, jarRegistry, cycle, bankAccounts);
+  const numberFormat = workbook.Sheets['Tổng Quan'].B3.z as string;
+  const chart: ExcelChart[] = [{ title: 'Thu, chi và dòng tiền ròng', kind: 'bar', numberFormat, series: [{
+    name: 'Giá trị', categories: ['Tổng thu', 'Tổng chi', 'Dòng tiền ròng'], values: [5, 6, 7].map(row => workbook.Sheets['Biểu Đồ'][`B${row}`].v as number),
+    categoriesRef: "'Biểu Đồ'!$A$5:$A$7", valuesRef: "'Biểu Đồ'!$B$5:$B$7",
+  }] }];
+  const categories = workbook.Sheets['Danh Mục Thu Chi'];
+  const categoryEnd = XLSX.utils.decode_range(categories['!ref']!).e.r + 1;
+  for (const [type, title] of [['Chi tiêu', 'Tỷ trọng chi theo danh mục'], ['Thu nhập', 'Tỷ trọng thu theo danh mục']]) {
+    const rows = Array.from({ length: Math.max(0, categoryEnd - 1) }, (_, i) => i + 2).filter(row => categories[`A${row}`]?.v === type);
+    if (!rows.length) continue;
+    chart.push({ title, kind: 'pie', numberFormat, series: [{ name: type,
+      categories: rows.map(row => String(categories[`B${row}`].v)), values: rows.map(row => categories[`D${row}`].v as number),
+      categoriesRef: `'Danh Mục Thu Chi'!$B$${rows[0]}:$B$${rows.at(-1)}`, valuesRef: `'Danh Mục Thu Chi'!$D$${rows[0]}:$D$${rows.at(-1)}`,
+    }] });
+  }
+  const jarsSheet = workbook.Sheets['Báo Cáo Hũ Tài Chính'];
+  const jarEnd = XLSX.utils.decode_range(jarsSheet['!ref']!).e.r;
+  if (jarEnd >= 2) chart.push({ title: 'Hạn mức hũ so với thực chi', kind: 'bar', numberFormat, series: (['G', 'H'] as const).map((column, index) => ({
+    name: index === 0 ? 'Hạn mức' : 'Thực chi', categories: Array.from({ length: jarEnd - 1 }, (_, i) => String(jarsSheet[`B${i + 2}`].v)),
+    values: Array.from({ length: jarEnd - 1 }, (_, i) => typeof jarsSheet[`${column}${i + 2}`]?.v === 'number' ? jarsSheet[`${column}${i + 2}`].v as number : null),
+    categoriesRef: `'Báo Cáo Hũ Tài Chính'!$B$2:$B$${jarEnd}`, valuesRef: `'Báo Cáo Hũ Tài Chính'!$${column}$2:$${column}$${jarEnd}`,
+  })) });
+  return addNativeExcelCharts(new Uint8Array(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })), workbook.SheetNames.indexOf('Biểu Đồ') + 1, chart);
 }
 
 export function exportToExcel(
@@ -242,11 +330,16 @@ export function exportToExcel(
   monthlyIncome: number,
   jarRegistry: Jar[] = jars,
   cycle?: AnalyticsCycle,
+  bankAccounts: BankAccount[] = [],
 ) {
-  const wb = buildExcelWorkbook(jars, transactions, monthlyIncome, jarRegistry, cycle);
+  const bytes = buildExcelFile(jars, transactions, monthlyIncome, jarRegistry, cycle, bankAccounts);
   const now = new Date();
   const dateStr = cycle ? `${cycle.start}_${cycle.end}` : `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
-  XLSX.writeFile(wb, `Bao_Cao_Tai_Chinh_RoFinance_${dateStr}.xlsx`);
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  const link = document.createElement('a');
+  link.href = url; link.download = `Bao_Cao_Tai_Chinh_RoFinance_${dateStr}.xlsx`;
+  document.body.appendChild(link); link.click(); link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function exportToPDFPrint(
@@ -258,7 +351,7 @@ export function exportToPDFPrint(
 ) {
   const printWindow = window.open('', '_blank', 'width=900,height=800');
   if (!printWindow) return;
-  const { reportJars, reportTransactions, income, totalSpent, totalAllocated, period, detailsIncomplete } =
+  const { reportJars, reportTransactions, income, totalSpent, totalJarSpent, bankExpenseTotal, totalAllocated, period, detailsIncomplete } =
     buildExportReportData(jars, transactions, monthlyIncome, jarRegistry, cycle);
   const nowStr = new Date().toLocaleDateString('vi-VN');
 
@@ -320,16 +413,17 @@ export function exportToPDFPrint(
         </div>
         <div class="card">
           <div class="title">Thực Tế Đã Chi Tiêu</div>
-          <div class="value" style="color: ${totalAllocated !== null && totalSpent > totalAllocated ? '#dc2626' : '#16a34a'}">
+          <div class="value" style="color: ${totalAllocated !== null && totalJarSpent > totalAllocated ? '#dc2626' : '#16a34a'}">
             ${formatVND(totalSpent)}
           </div>
         </div>
         <div class="card">
-          <div class="title">Thặng Dư Còn Lại</div>
-          <div class="value">${totalAllocated === null ? '—' : formatVND(totalAllocated - totalSpent)}</div>
+          <div class="title">Còn Lại Trong Các Hũ</div>
+          <div class="value">${totalAllocated === null ? '—' : formatVND(totalAllocated - totalJarSpent)}</div>
         </div>
       </div>
 
+      <p>Chi ngoài hũ: ${formatVND(bankExpenseTotal)}. Khoản này đã tính vào tổng chi nhưng không trừ hạn mức các hũ.</p>
       <h2>1. Chi Tiết Phân Bổ Theo Hũ Tài Chính</h2>
       <table>
         <thead>
@@ -390,7 +484,7 @@ export function exportToPDFPrint(
               <tr>
                 <td>${formatDateVI(tx.date)}</td>
                 <td>${tx.type === 'income' ? 'Thu nhập' : tx.type === 'expense' ? 'Chi tiêu' : 'Chuyển tiền'}</td>
-                <td>${escapeHtml(isBankOnlyIncome(tx) ? 'Không phân bổ' : jar ? jar.name : '-')}</td>
+                <td>${escapeHtml(isBankOnlyTransaction(tx) ? (isBankOnlyExpense(tx) ? 'Ngoài hũ' : 'Không phân bổ') : jar ? jar.name : '-')}</td>
                 <td>${escapeHtml(tx.category)}</td>
                 <td class="text-right" style="font-weight: 600; color: ${tx.type === 'income' ? '#16a34a' : '#dc2626'};">
                   ${tx.type === 'income' ? '+' : '-'}${formatVND(tx.amount)}

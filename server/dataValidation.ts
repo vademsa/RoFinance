@@ -4,7 +4,7 @@ import {
   findPaymentMethodByName,
 } from '../shared/banks';
 import { CUSTOM_JAR_PLAN_ID, findJarPlan, JAR_PLAN_DEFINITIONS } from '../src/constants/jarPlans';
-import { isBankOnlyIncome } from '../shared/transactions';
+import { isBankOnlyIncome, isBankOnlyExpense } from '../shared/transactions';
 
 type DataRecord = Record<string, unknown>;
 
@@ -161,6 +161,8 @@ function validateBankAccounts(raw: unknown): { value?: DataRecord[]; error?: str
       !Number.isFinite(rawAccount.unallocatedOpeningBalance) ||
       Math.abs(rawAccount.unallocatedOpeningBalance) > 1_000_000_000_000_000
     )) return { error: 'Số dư chưa phân bổ của tài khoản không hợp lệ' };
+    if (rawAccount.openingBalance !== undefined && (typeof rawAccount.openingBalance !== 'number' || !Number.isFinite(rawAccount.openingBalance) || Math.abs(rawAccount.openingBalance) > 1_000_000_000_000_000)) return { error: 'Số dư đầu sổ tài khoản không hợp lệ' };
+    if (rawAccount.balanceReconciled !== undefined && typeof rawAccount.balanceReconciled !== 'boolean') return { error: 'Trạng thái đối soát tài khoản không hợp lệ' };
     value.push({
       ...rawAccount,
       bankCode: String(rawAccount.bankCode).trim().toUpperCase(),
@@ -212,25 +214,29 @@ function validateTransactions(
     }
     if (rawTransaction.bankAccountId !== undefined) {
       const account = bankAccounts.find((item) => item.id === rawTransaction.bankAccountId);
-      if (!isBankOnlyIncome(rawTransaction) || !hasSafeText(rawTransaction.bankAccountId, 100) || !account) {
-        return { error: 'Tài khoản nhận tiền không thuộc danh sách tài khoản đã lưu' };
+      const isBankIncome = isBankOnlyIncome(rawTransaction);
+      const isBankExpense = isBankOnlyExpense(rawTransaction);
+      if (!hasSafeText(rawTransaction.bankAccountId, 100) || !account || rawTransaction.type === 'transfer') {
+        return { error: 'Tài khoản ngân hàng không thuộc danh sách tài khoản đã lưu' };
       }
+      if (isBankIncome || isBankExpense) {
       if ((rawTransaction.allocations !== undefined && (!Array.isArray(rawTransaction.allocations) || rawTransaction.allocations.length > 0)) ||
-        rawTransaction.transferToJarId !== undefined) return { error: 'Khoản thu tài khoản không được phân bổ hoặc chuyển vào hũ' };
+        rawTransaction.transferToJarId !== undefined) return { error: 'Giao dịch tài khoản không được phân bổ hoặc chuyển vào hũ' };
       if (!hasSafeText(rawTransaction.category, 100) || !hasSafeText(rawTransaction.description, 500) || !isDateKey(rawTransaction.date)) {
-        return { error: 'Ngày, danh mục hoặc ghi chú khoản thu không hợp lệ' };
+        return { error: 'Ngày, danh mục hoặc ghi chú giao dịch không hợp lệ' };
       }
       if (rawTransaction.paymentMethodCode !== undefined && !findPaymentMethodByCode(rawTransaction.paymentMethodCode)) {
         return { error: 'Phương thức hoặc ngân hàng của giao dịch không hợp lệ' };
       }
       const method = findPaymentMethodByCode(account.bankCode)!;
-      value.push({ id: rawTransaction.id, type: 'income', amount, jarId: '', bankAccountId: account.id,
+      value.push({ id: rawTransaction.id, type: rawTransaction.type as string, amount, jarId: '', bankAccountId: account.id,
         category: rawTransaction.category, categoryId: rawTransaction.categoryId, categoryIcon: rawTransaction.categoryIcon,
         date: rawTransaction.date, description: rawTransaction.description,
         paymentMethodCode: method.code, bankName: method.shortName,
         ...(rawTransaction.bankTransactionId ? { bankTransactionId: rawTransaction.bankTransactionId, sourceAccountNumber: account.accountNumber } : {}),
       });
       continue;
+      }
     }
     if (!hasSafeText(rawTransaction.jarId, 100) || !jarById.has(rawTransaction.jarId as string)) {
       return { error: 'Hũ của giao dịch không thuộc dữ liệu tài khoản hiện tại' };
@@ -287,7 +293,15 @@ function validateTransactions(
     const suppliedCode = typeof rawTransaction.paymentMethodCode === 'string'
       ? rawTransaction.paymentMethodCode.trim().toUpperCase()
       : '';
-    const method = suppliedCode
+    const selectedAccount = rawTransaction.bankAccountId === undefined ? undefined : bankAccounts.find(a => a.id === rawTransaction.bankAccountId);
+    if (selectedAccount && suppliedCode && !findPaymentMethodByCode(suppliedCode)) return { error: 'Phương thức hoặc ngân hàng của giao dịch không hợp lệ' };
+    if (selectedAccount && rawTransaction.transferToJarId !== undefined) return { error: 'Giao dịch cá nhân không được chuyển hạn mức đồng thời' };
+    if (selectedAccount && rawTransaction.type === 'expense' && rawTransaction.allocations !== undefined) return { error: 'Khoản chi không được kèm phân bổ thu nhập' };
+    if (selectedAccount && rawTransaction.type === 'income' && (!Array.isArray(rawTransaction.allocations) || !rawTransaction.allocations.length ||
+      rawTransaction.allocations.some(a => !isRecord(a) || !jarById.has(a.jarId as string) || typeof a.amount !== 'number' || !Number.isFinite(a.amount) || a.amount <= 0) ||
+      new Set(rawTransaction.allocations.map(a => (a as DataRecord).jarId)).size !== rawTransaction.allocations.length ||
+      rawTransaction.allocations.reduce((sum, a) => sum + Number((a as DataRecord).amount), 0) !== amount)) return { error: 'Phân bổ hạn mức khoản thu không hợp lệ' };
+    const method = selectedAccount ? findPaymentMethodByCode(selectedAccount.bankCode) : suppliedCode
       ? findPaymentMethodByCode(suppliedCode)
       : findPaymentMethodByName(rawTransaction.bankName);
     if (!method) {
@@ -301,7 +315,7 @@ function validateTransactions(
       }
       return { error: 'Phương thức hoặc ngân hàng của giao dịch không hợp lệ' };
     }
-    if (rawTransaction.bankName !== undefined && rawTransaction.bankName !== method.shortName) {
+    if (!selectedAccount && rawTransaction.bankName !== undefined && rawTransaction.bankName !== method.shortName) {
       return { error: 'Tên ngân hàng không khớp với phương thức đã chọn' };
     }
     value.push({
@@ -316,7 +330,7 @@ function validateTransactions(
   );
   for (const existing of existingById.values()) {
     const referencesArchivedJar =
-      (!isBankOnlyIncome(existing) && !activeJarIds.has(existing.jarId as string)) ||
+      (!isBankOnlyIncome(existing) && !isBankOnlyExpense(existing) && !activeJarIds.has(existing.jarId as string)) ||
       (typeof existing.transferToJarId === 'string' && !activeJarIds.has(existing.transferToJarId));
     if (referencesArchivedJar) {
       const submitted = rawById.get(existing.id);
@@ -419,7 +433,8 @@ function validateOtherOptionFields(data: DataRecord, jars: DataRecord[]) {
   if (data.customCategories !== undefined) {
     if (!Array.isArray(data.customCategories) || data.customCategories.some((category) =>
       !isRecord(category) ||
-      (category.type === 'expense' && !jarCodes.has(category.jarCode))
+      // Old jarCode is provenance, no longer a category scope or jar reference.
+      (category.jarCode !== undefined && (typeof category.jarCode !== 'string' || !/^[A-Za-z0-9_-]{1,32}$/.test(category.jarCode)))
     )) return 'Hũ liên kết với danh mục không hợp lệ';
   }
   if (data.monthlySummaries !== undefined) {
@@ -430,6 +445,12 @@ function validateOtherOptionFields(data: DataRecord, jars: DataRecord[]) {
       if (summary.unallocatedIncome !== undefined && (
         typeof summary.unallocatedIncome !== 'number' || !Number.isFinite(summary.unallocatedIncome) ||
         summary.unallocatedIncome < 0 || summary.unallocatedIncome > Number(summary.income)
+      )) return true;
+      if (summary.unallocatedExpense !== undefined && (
+        typeof summary.unallocatedExpense !== 'number' || !Number.isFinite(summary.unallocatedExpense) ||
+        typeof summary.expense !== 'number' || !Number.isFinite(summary.expense) ||
+        summary.unallocatedExpense < 0 || summary.unallocatedExpense > Number(summary.expense) ||
+        summary.unallocatedExpense > 1_000_000_000_000_000
       )) return true;
       if (summary.jarBreakdown === undefined) return false;
       return !Array.isArray(summary.jarBreakdown) || summary.jarBreakdown.some((item) =>
@@ -518,12 +539,31 @@ export function validateAndNormalizeUserData(
     accountsResult.value,
   );
   if (!transactionsResult.value) return { error: transactionsResult.error };
-  const bankIncomeTotals = new Map<unknown, number>();
-  for (const transaction of transactionsResult.value.filter(isBankOnlyIncome)) {
-    const total = (bankIncomeTotals.get(transaction.bankAccountId) || 0) + Number(transaction.amount);
-    if (!Number.isFinite(total) || total > 1_000_000_000_000_000) return { error: 'Tổng tiền nhận vào tài khoản vượt giới hạn hợp lệ' };
-    bankIncomeTotals.set(transaction.bankAccountId, total);
+  const bankTotals = new Map<string, number>();
+  for (const transaction of transactionsResult.value.filter(t => isBankOnlyIncome(t) || isBankOnlyExpense(t))) {
+    const key = `${transaction.type}:${transaction.bankAccountId}`;
+    const total = (bankTotals.get(key) || 0) + Number(transaction.amount);
+    if (!Number.isFinite(total) || total > 1_000_000_000_000_000) return { error: 'Tổng giao dịch tài khoản vượt giới hạn hợp lệ' };
+    bankTotals.set(key, total);
   }
   result.transactions = transactionsResult.value;
+  // Bank balances are a separate cash ledger. Never accept jar-derived totals or
+  // let an older client silently strip the independent baseline after migration.
+  const previousAccounts = Array.isArray(existingData.bankAccounts) ? existingData.bankAccounts.filter(isRecord) : [];
+  const previousTransactions = Array.isArray(existingData.transactions) ? existingData.transactions.filter(isRecord) : [];
+  const net = (items: DataRecord[], id: unknown) => items.filter(t => t.bankAccountId === id && (t.type === 'income' || t.type === 'expense'))
+    .reduce((sum, t) => sum + (t.type === 'expense' ? -Number(t.amount) : Number(t.amount)), 0);
+  for (const account of accountsResult.value) {
+    const old = previousAccounts.find(a => a.id === account.id);
+    if (old?.openingBalance !== undefined && account.openingBalance === undefined) return { error: 'Dữ liệu tài khoản đã đổi sang sổ độc lập. Vui lòng tải lại ứng dụng trước khi lưu.' };
+    if (account.openingBalance === undefined) {
+      const source = old || account;
+      account.openingBalance = Number(source.balance) - net(previousTransactions, account.id);
+      account.balanceReconciled = false;
+    }
+    const balance = Math.max(0, Math.round(Number(account.openingBalance) + net(transactionsResult.value, account.id)));
+    if (!Number.isFinite(balance) || balance > 1_000_000_000_000_000 || Math.abs(Number(account.openingBalance)) > 1_000_000_000_000_000) return { error: 'Số dư sổ tài khoản vượt giới hạn hợp lệ' };
+    account.balance = balance;
+  }
   return { value: result };
 }

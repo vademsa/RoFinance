@@ -115,6 +115,7 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
     setMessage('');
     try {
       await onSaveBalance(account.id, balance);
+      setBalanceInputs(current => { const next = { ...current }; delete next[account.id]; return next; });
       setMessage(`Đã lưu số dư ${account.bankName}.`);
     } catch (error: any) {
       setMessage(error.message || 'Không thể lưu số dư.');
@@ -129,7 +130,7 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
         <header className="flex items-start justify-between gap-4 border-b border-zinc-800 bg-[#121214] p-5 sm:p-6">
           <div className="flex items-center gap-3">
             <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/10 p-3 text-indigo-400"><Landmark className="h-5 w-5" /></div>
-            <div><h2 className="text-lg font-black text-white">Tài Khoản & Số Dư</h2><p className="mt-1 text-xs text-zinc-400">Tài khoản liên kết hũ được tính số dư tự động; RoFinance không kết nối hoặc đọc dữ liệu ngân hàng.</p></div>
+            <div><h2 className="text-lg font-black text-white">Tài Khoản & Số Dư</h2><p className="mt-1 text-xs text-zinc-400">Số dư độc lập với hạn mức hũ. Hãy đối soát số dư thực; RoFinance không kết nối ngân hàng.</p></div>
           </div>
           <button type="button" onClick={onClose} aria-label="Đóng" className="cursor-pointer rounded-xl p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white"><X className="h-5 w-5" /></button>
         </header>
@@ -162,17 +163,13 @@ export const BankAccountsModal: React.FC<BankAccountsModalProps> = ({
                     <div className="text-sm font-black text-white">{account.bankName}</div>
                     <div data-no-translate="true" className="mt-1 truncate font-mono text-xs text-zinc-400">{account.accountNumber} · {account.accountHolder}</div>
                     <div className="mt-1 text-[10px] text-zinc-500">
-                      {isDerivedFromJars ? `Tự động tổng hợp từ ${linkedJars.length} hũ` : `Lưu thủ công: ${account.lastSynced}`}
+                      {account.balanceReconciled === false ? 'Cần xác nhận số dư thực, không lấy từ hạn mức hũ.' : `Sổ tài khoản độc lập · ${account.lastSynced}`}
                     </div>
                   </div>
                   <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
-                    {isDerivedFromJars ? <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-2.5 text-right font-mono text-sm font-black text-indigo-200 sm:min-w-44">
-                      {formatVND(getBankAccountBalance(jars, account, transactions), isAmountsHidden)}
-                    </div> : <>
-                      <CurrencyInput id={`manual-balance-${account.id}`} value={balanceInputs[account.id] ?? account.balance} onValueChange={(value) => setBalanceInputs((current) => ({ ...current, [account.id]: value }))} min={0} hideAmount={isAmountsHidden} className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-[#1c1c20] px-3 py-2 text-right font-mono text-sm font-bold text-white outline-none focus:border-indigo-500 sm:w-44" />
+                      <CurrencyInput id={`manual-balance-${account.id}`} value={balanceInputs[account.id] ?? getBankAccountBalance(jars, account, transactions)} onValueChange={(value) => setBalanceInputs((current) => ({ ...current, [account.id]: value }))} min={0} hideAmount={isAmountsHidden} aria-label={`Số dư ${account.bankName}`} className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-[#1c1c20] px-3 py-2 text-right font-mono text-base font-bold text-white outline-none focus:border-indigo-500 sm:w-44" />
                       <button type="button" onClick={() => saveBalance(account)} disabled={savingId === account.id} aria-label={`Lưu số dư ${account.bankName}`} className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50"><Save className="h-4 w-4" /></button>
                       {account.isManuallyAdded && <button type="button" onClick={() => onDeleteBankAccount(account.id)} aria-label={`Xóa ${account.bankName}`} className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-rose-500/20 text-rose-400 hover:bg-rose-500/10"><Trash2 className="h-4 w-4" /></button>}
-                    </>}
                     <button type="button" onClick={() => beginEdit(account)} aria-label={`Chỉnh sửa ${account.bankName} ${account.accountNumber}`} className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-500/30 text-indigo-300 transition-colors hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Pencil className="h-4 w-4" /></button>
                   </div>
                   {editingAccountId === account.id && <form onSubmit={saveEdit} className="grid gap-3 border-t border-zinc-800 pt-3 sm:col-span-2 sm:grid-cols-2">

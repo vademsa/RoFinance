@@ -1,4 +1,4 @@
-import type { Jar, Transaction } from '../src/types';
+import type { BankAccount, Jar, Transaction } from '../src/types';
 import type { AnalyticsCycle } from '../src/utils/analytics';
 import { Preferences } from '@capacitor/preferences';
 import type { CharacterReceiptStorage } from '../shared/characterReceipt';
@@ -29,7 +29,7 @@ export function markLegacyImport(_userId: string) {
 
 type ReportExporter = (
   jars: Jar[], transactions: Transaction[], monthlyIncome: number,
-  jarRegistry: Jar[], cycle?: AnalyticsCycle,
+  jarRegistry: Jar[], cycle?: AnalyticsCycle, bankAccounts?: BankAccount[],
 ) => void;
 
 const unavailable: ReportExporter = () => {

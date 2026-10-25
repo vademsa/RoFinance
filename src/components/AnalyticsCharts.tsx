@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bar, CartesianGrid, ComposedChart, Line, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -7,7 +7,7 @@ import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, CalendarRange,
   Check, ChevronDown, FileSpreadsheet, Layers3, Pencil, Printer, Target, Wallet, X,
 } from 'lucide-react';
-import type { Jar, MonthlyCycleSummary, Transaction } from '../types';
+import type { BankAccount, Jar, MonthlyCycleSummary, Transaction, TransactionCategory } from '../types';
 import { formatShortVND, formatVND } from '../utils/formatters';
 import { getDisplayCurrencyCode, getRuntimePreferences } from '../lib/preferences';
 import { formatCycleDate, parseLocalDate } from '../utils/monthlyCycle';
@@ -16,11 +16,16 @@ import {
   type AnalyticsCycle, type CategoryTotal,
 } from '../utils/analytics';
 import { CurrencyInput } from './CurrencyInput';
+import { CategoryChartPanel } from './CategoryChartPanel';
+import { getChartCategoryTransactions } from '../utils/categoryChartView';
+import { CategoryTransactionsDialog } from './CategoryTransactionsDialog';
 
 interface AnalyticsChartsProps {
   jars: Jar[];
   jarRegistry?: Jar[];
   transactions: Transaction[];
+  customCategories?: TransactionCategory[];
+  bankAccounts?: BankAccount[];
   monthlyIncome: number;
   isAmountsHidden?: boolean;
   monthlySummaries: MonthlyCycleSummary[];
@@ -63,55 +68,12 @@ function MetricCard({
   );
 }
 
-function CategoryList({
-  categories, total, emptyLabel, countLabel, otherLabel, isAmountsHidden,
-}: {
-  categories: CategoryTotal[];
-  total: number;
-  emptyLabel: string;
-  countLabel: string;
-  otherLabel: string;
-  isAmountsHidden: boolean;
-}) {
-  if (isAmountsHidden) {
-    return <p className="py-10 text-center text-sm text-zinc-400">••••••••</p>;
-  }
-  if (!categories.length) {
-    return <p className="rounded-xl border border-dashed border-zinc-700 px-4 py-8 text-center text-xs text-zinc-400">{emptyLabel}</p>;
-  }
-  const visible = categories.slice(0, 6);
-  const remainder = categories.slice(6);
-  const rows = remainder.length
-    ? [...visible, { name: otherLabel, amount: remainder.reduce((sum, row) => sum + row.amount, 0), count: remainder.reduce((sum, row) => sum + row.count, 0) }]
-    : visible;
-  return (
-    <div className="space-y-3">
-      {rows.map((row) => {
-        const share = total > 0 ? (row.amount / total) * 100 : 0;
-        return (
-          <div key={row.name} className="min-w-0">
-            <div className="flex items-baseline justify-between gap-3 text-xs">
-              <span className="min-w-0 truncate font-semibold text-zinc-200" title={row.name}>{row.name}</span>
-              <span className="shrink-0 font-mono font-bold text-white">{formatVND(row.amount, isAmountsHidden)}</span>
-            </div>
-            <div className="mt-1.5 flex items-center gap-2">
-              <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-zinc-800">
-                <div className="h-full rounded-full bg-indigo-500" style={{ width: Math.min(100, share) + '%' }} />
-              </div>
-              <span className="w-12 shrink-0 text-right font-mono text-[10px] text-zinc-400">{share.toFixed(1)}%</span>
-            </div>
-            <span className="text-[10px] text-zinc-500">{row.count} {countLabel}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
   jars,
   jarRegistry = jars,
   transactions,
+  customCategories = [],
+  bankAccounts = [],
   monthlyIncome,
   isAmountsHidden = false,
   monthlySummaries,
@@ -125,6 +87,7 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
   const [chartMode, setChartMode] = useState<'cashflow' | 'budget'>('cashflow');
   const [editingSummaryId, setEditingSummaryId] = useState<string | null>(null);
   const [incomeDraft, setIncomeDraft] = useState<number | ''>('');
+  const [viewingCategory, setViewingCategory] = useState<{ category: CategoryTotal; sourceNames: string[]; type: 'income' | 'expense'; cycleId: string } | null>(null);
   const isEnglish = getRuntimePreferences().language === 'en';
   const labels = isEnglish ? {
     title: 'Financial analytics',
@@ -176,14 +139,15 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
     noJars: 'No jar data is available for this cycle.',
     overspent: 'Over budget',
     categories: 'Where the money went',
-    categoryDetail: 'Highest expense categories in the selected cycle',
+    categoryDetail: 'Recorded expense categories in this cycle. Select or group them to customize the chart.',
     sources: 'Recorded income sources',
     sourceDetail: 'Only income entered as transactions is categorized here.',
     incompleteSources: 'Categorized transactions may differ from confirmed cycle income.',
     incompleteExpenses: 'Category details may not cover all confirmed expenses in older cycles.',
     uncategorizedExpense: 'Detailed expense transactions are unavailable for this cycle.',
     noIncomeTransactions: 'No categorized income transactions in this cycle.',
-    other: 'Other categories',
+    expenseChart: 'Expense distribution by category',
+    incomeChart: 'Income distribution by category',
     transactions: 'transactions',
     carryoverSources: 'Carryover by source cycle',
     history: 'Cycle history',
@@ -246,14 +210,15 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
     noJars: 'Chưa có dữ liệu hũ cho chu kỳ này.',
     overspent: 'Vượt ngân sách',
     categories: 'Chi tiêu theo danh mục',
-    categoryDetail: 'Các danh mục chi nhiều nhất trong chu kỳ đã chọn',
+    categoryDetail: 'Danh mục chi đã ghi trong chu kỳ này. Chọn hoặc gộp danh mục để tùy chỉnh biểu đồ.',
     sources: 'Nguồn thu đã ghi giao dịch',
     sourceDetail: 'Chỉ các khoản thu được nhập thành giao dịch mới có phân loại tại đây.',
     incompleteSources: 'Tổng giao dịch đã phân loại có thể khác thu nhập đã xác nhận.',
     incompleteExpenses: 'Chi tiết danh mục có thể chưa bao phủ toàn bộ chi tiêu của các chu kỳ cũ.',
     uncategorizedExpense: 'Chưa có giao dịch chi chi tiết cho chu kỳ này.',
     noIncomeTransactions: 'Chưa có giao dịch thu được phân loại trong chu kỳ.',
-    other: 'Danh mục khác',
+    expenseChart: 'Tỷ trọng chi theo danh mục',
+    incomeChart: 'Tỷ trọng thu theo danh mục',
     transactions: 'giao dịch',
     carryoverSources: 'Tiền dư theo chu kỳ nguồn',
     history: 'Lịch sử tổng kết chu kỳ',
@@ -276,6 +241,7 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
   const selected = selectedCycleId === 'CURRENT'
     ? current
     : cycles.find((cycle) => cycle.id === selectedCycleId) || current;
+  useEffect(() => { setViewingCategory(null); }, [selected.id, isAmountsHidden]);
   const completed = cycles.filter((cycle) => !cycle.isCurrent).reverse();
   const yearOptions = [...new Set(cycles.map((cycle) => cycle.start.slice(0, 4)))].reverse();
   const effectiveOverviewScope = overviewScope === 'RECENT' || yearOptions.includes(overviewScope)
@@ -284,9 +250,9 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
     ? cycles
     : cycles.filter((cycle) => cycle.start.startsWith(effectiveOverviewScope));
   const overview = getRecentCycleTotals(overviewCycles, effectiveOverviewScope === 'RECENT' ? 12 : overviewCycles.length);
-  const overviewExpenseCategories = getCategoryTotals(overview.cycles.flatMap((cycle) => cycle.transactions), 'expense');
-  const expenseCategories = getCategoryTotals(selected.transactions, 'expense');
-  const incomeCategories = getCategoryTotals(selected.transactions, 'income');
+  const overviewExpenseCategories = getCategoryTotals(overview.cycles.flatMap((cycle) => cycle.transactions), 'expense', customCategories);
+  const expenseCategories = getCategoryTotals(selected.transactions, 'expense', customCategories);
+  const incomeCategories = getCategoryTotals(selected.transactions, 'income', customCategories);
   const recordedIncome = incomeCategories.reduce((sum, row) => sum + row.amount, 0);
   const recordedExpense = expenseCategories.reduce((sum, row) => sum + row.amount, 0);
   const sortedJars = [...selected.jars].sort((a, b) =>
@@ -566,7 +532,7 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
               <div className="mt-2 space-y-1.5">
                 {overviewExpenseCategories.slice(0, 3).map((category, index) => (
                   <div key={category.name} className="flex items-baseline justify-between gap-2 text-[11px]">
-                    <span className="min-w-0 truncate text-zinc-400">{index + 1}. {category.name}</span>
+                    <span data-no-translate={category.isCustom ? 'true' : undefined} className="min-w-0 truncate text-zinc-400" title={category.name}>{index + 1}. {category.name}</span>
                     <span className="shrink-0 font-mono text-zinc-200">{formatVND(category.amount, isAmountsHidden)}</span>
                   </div>
                 ))}
@@ -662,18 +628,20 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="min-w-0 rounded-[24px] border border-zinc-800 bg-[#121214] p-4 sm:p-5">
+        <div role="region" aria-label={labels.categories} className="min-w-0 rounded-[24px] border border-zinc-800 bg-[#121214] p-4 sm:p-5">
           <h3 className="text-sm font-extrabold text-white">{labels.categories}</h3>
           <p className="mb-4 mt-1 text-xs text-zinc-400">{labels.categoryDetail}</p>
-          <CategoryList categories={expenseCategories} total={Math.max(selected.expense, recordedExpense)} emptyLabel={labels.uncategorizedExpense} countLabel={labels.transactions} otherLabel={labels.other} isAmountsHidden={isAmountsHidden} />
+          <CategoryChartPanel key={selected.id} categories={expenseCategories} type="expense" chartLabel={labels.expenseChart} emptyLabel={labels.uncategorizedExpense} isAmountsHidden={isAmountsHidden}
+            onViewTransactions={(category, sourceNames) => setViewingCategory({ category, sourceNames, type: 'expense', cycleId: selected.id })} />
           {!isAmountsHidden && recordedExpense !== selected.expense && (recordedExpense > 0 || selected.expense > 0) && (
             <p className="mt-4 text-[11px] text-amber-400">{labels.incompleteExpenses}</p>
           )}
         </div>
-        <div className="min-w-0 rounded-[24px] border border-zinc-800 bg-[#121214] p-4 sm:p-5">
+        <div role="region" aria-label={labels.sources} className="min-w-0 rounded-[24px] border border-zinc-800 bg-[#121214] p-4 sm:p-5">
           <h3 className="text-sm font-extrabold text-white">{labels.sources}</h3>
           <p className="mb-4 mt-1 text-xs text-zinc-400">{labels.sourceDetail}</p>
-          <CategoryList categories={incomeCategories} total={recordedIncome} emptyLabel={labels.noIncomeTransactions} countLabel={labels.transactions} otherLabel={labels.other} isAmountsHidden={isAmountsHidden} />
+          <CategoryChartPanel key={selected.id} categories={incomeCategories} type="income" chartLabel={labels.incomeChart} emptyLabel={labels.noIncomeTransactions} isAmountsHidden={isAmountsHidden}
+            onViewTransactions={(category, sourceNames) => setViewingCategory({ category, sourceNames, type: 'income', cycleId: selected.id })} />
           {!isAmountsHidden && recordedIncome !== selected.income && selected.income > 0 && (
             <p className="mt-4 text-[11px] text-amber-400">{labels.incompleteSources}</p>
           )}
@@ -754,6 +722,12 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
           </>
         )}
       </section>
+      {!isAmountsHidden && viewingCategory?.cycleId === selected.id && (
+        <CategoryTransactionsDialog category={viewingCategory.category} type={viewingCategory.type}
+          showOriginalCategories={viewingCategory.sourceNames.length > 1}
+          transactions={getChartCategoryTransactions(selected.transactions, viewingCategory.type, viewingCategory.sourceNames)}
+          jars={jarRegistry} bankAccounts={bankAccounts} period={cycleLabel(selected.start, selected.end)} onClose={() => setViewingCategory(null)} />
+      )}
     </div>
   );
 };

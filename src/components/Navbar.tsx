@@ -12,6 +12,9 @@ import {
   Wallet,
   ReceiptText,
   Smile,
+  House,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import type { AppPreferences } from '../lib/preferences';
 import { isNativeApp, type AuthUser } from '@platform';
@@ -29,6 +32,8 @@ interface NavbarProps {
   user?: AuthUser | null;
   preferences: AppPreferences;
   onPreferencesChange: (preferences: AppPreferences) => void;
+  isAmountsHidden?: boolean;
+  onToggleHideAmounts?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -38,6 +43,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   user,
   preferences,
   onPreferencesChange,
+  isAmountsHidden = false,
+  onToggleHideAmounts,
 }) => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [resolvedTheme, setResolvedTheme] = useState<'dark' | 'light'>(() =>
@@ -81,7 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     theme: resolvedTheme === 'light' ? 'dark' : 'light',
   });
   return (
-    <header className={`${isNativeApp ? 'mobile-safe-header relative shrink-0 ' : 'sticky top-0 '}z-30 bg-[#09090b]/90 backdrop-blur-md text-zinc-100 pt-2 sm:pt-4 px-2 sm:px-6 lg:px-8`}>
+    <header data-ui="app-header" className={`${isNativeApp ? 'mobile-safe-header relative shrink-0 ' : 'sticky top-0 '}z-30 bg-[#09090b]/90 backdrop-blur-md text-zinc-100 pt-2 sm:pt-4 px-2 sm:px-6 lg:px-8`}>
       <div className="max-w-7xl mx-auto">
         <div className="bg-[#121214] border border-zinc-800 rounded-2xl sm:rounded-3xl px-3 sm:px-6 py-2.5 sm:py-3.5 shadow-xl flex items-center justify-between">
           {/* Logo & Brand */}
@@ -109,7 +116,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
               }`}
             >
-              Hũ Tài Chính
+              <span data-no-translate="true">{preferences.language === 'en' ? 'Overview' : 'Tổng quan'}</span>
             </button>
             <button
               onClick={() => setActiveTab('transactions')}
@@ -119,7 +126,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
               }`}
             >
-              Chi Tiêu
+              <span data-no-translate="true">{preferences.language === 'en' ? 'Transactions' : 'Giao dịch'}</span>
             </button>
             <button
               onClick={() => setActiveTab('crypto')}
@@ -146,6 +153,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>}
 
           <div className="ml-auto flex shrink-0 items-center gap-2 md:ml-2">
+            {onToggleHideAmounts && <button type="button" onClick={onToggleHideAmounts} data-no-translate="true"
+              aria-label={preferences.language === 'en' ? isAmountsHidden ? 'Show all amounts' : 'Hide all amounts' : isAmountsHidden ? 'Hiển thị toàn bộ số tiền' : 'Ẩn toàn bộ số tiền'}
+              className="group relative flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-zinc-800 bg-[#1c1c20] text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+              {isAmountsHidden ? <EyeOff size={16} aria-hidden="true"/> : <Eye size={16} aria-hidden="true"/>}
+              <HeaderTooltip label={preferences.language === 'en' ? isAmountsHidden ? 'Show amounts' : 'Hide amounts' : isAmountsHidden ? 'Hiện tiền' : 'Ẩn tiền'}/>
+            </button>}
             {user && <button type="button" onClick={() => setActiveTab('character')}
               aria-label={preferences.language === 'en' ? 'Character profile' : 'Hồ sơ nhân vật'}
               className={`group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${activeTab === 'character' ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300' : 'border-zinc-800 bg-[#1c1c20] text-zinc-400 hover:text-white'}`}>
@@ -179,10 +192,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {isNativeApp ? createPortal(<nav aria-label="Điều hướng chính" className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 gap-2 border-t border-zinc-800 bg-[#121214]/95 px-2 pt-2 text-[11px] font-semibold shadow-2xl backdrop-blur-lg">
           {([
-            ['jars', Wallet, 'Hũ'],
-            ['transactions', ReceiptText, 'Giao dịch'],
-            ['crypto', Coins, 'Đầu tư'],
-            ['analytics', PieChart, 'Thống kê'],
+            ['jars', House, preferences.language === 'en' ? 'Overview' : 'Tổng quan'],
+            ['transactions', ReceiptText, preferences.language === 'en' ? 'Transactions' : 'Giao dịch'],
+            ['crypto', Coins, preferences.language === 'en' ? 'Investments' : 'Đầu tư'],
+            ['analytics', PieChart, preferences.language === 'en' ? 'Analytics' : 'Thống kê'],
           ] as const).map(([tab, Icon, label]) => (
             <button
               key={tab}
@@ -192,7 +205,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className={`flex min-h-12 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl px-1 transition-colors focus-visible:outline-2 focus-visible:outline-indigo-400 ${activeTab === tab ? tab === 'crypto' ? 'bg-amber-500 text-zinc-950' : 'bg-indigo-600 text-white' : tab === 'crypto' ? 'text-amber-400' : 'text-zinc-400'}`}
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
-              <span>{label}</span>
+              <span data-no-translate="true">{label}</span>
             </button>
           ))}
         </nav>, document.body) : <div className="lg:hidden grid grid-cols-4 gap-1 py-1.5 my-2 bg-[#121214] rounded-2xl border border-zinc-800 text-[10px] font-medium px-1.5">
@@ -200,7 +213,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => setActiveTab('jars')}
             className={`py-1.5 px-1 rounded-lg ${activeTab === 'jars' ? 'bg-indigo-600 text-white font-bold' : 'text-zinc-400'}`}
           >
-            Hũ Tài Chính
+            <span data-no-translate="true">{preferences.language === 'en' ? 'Overview' : 'Tổng quan'}</span>
           </button>
           <button
             onClick={() => setActiveTab('transactions')}
@@ -208,7 +221,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               activeTab === 'transactions' ? 'bg-indigo-600 text-white font-bold' : 'text-zinc-400'
             }`}
           >
-            Chi Tiêu
+            <span data-no-translate="true">{preferences.language === 'en' ? 'Transactions' : 'Giao dịch'}</span>
           </button>
           <button
             onClick={() => setActiveTab('crypto')}

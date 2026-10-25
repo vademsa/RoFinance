@@ -64,7 +64,7 @@ export const TransactionImportModal: React.FC<Props> = ({ mode, onClose, onSave,
       amount: 0, description: '', reference: '', jarId: firstJar?.id || '',
       categoryId: initialCategory?.id || '', selected: true, isPlaceholder: true }] : []);
     setParseErrors([]); setError(''); setPasteValue(''); setFromDate(''); setToDate(''); setRangeSkipped(0);
-    setAccountId(importAccounts[0]?.id || '');
+    setAccountId(mode === 'bulk' ? 'CASH' : importAccounts[0]?.id || '');
   }, [mode]);
   if (!mode) return null;
 
@@ -159,7 +159,10 @@ export const TransactionImportModal: React.FC<Props> = ({ mode, onClose, onSave,
     if (item.key !== key) return item;
     const next = { ...item, ...patch, isPlaceholder: false };
     if (patch.jarId !== undefined || patch.type !== undefined) {
-      next.categoryId = next.jarId ? defaultCategoryId(next.type, next.jarId) : '';
+      const options = getTransactionCategories(next.type, undefined, categories);
+      if (!options.some(category => category.id === next.categoryId)) {
+        next.categoryId = next.jarId ? defaultCategoryId(next.type, next.jarId) : '';
+      }
     }
     return next;
   }));
@@ -254,11 +257,13 @@ export const TransactionImportModal: React.FC<Props> = ({ mode, onClose, onSave,
     const items: Omit<Transaction, 'id'>[] = selected.map((item) => {
       const jar = jars.find((entry) => entry.id === item.jarId)!;
       const category = getTransactionCategories(item.type, jar.code, categories).find((entry) => entry.id === item.categoryId)!;
+      const paymentAccount = account;
       return { type: item.type, amount: item.amount, jarId: jar.id, date: item.date, description: item.description,
+        bankAccountId: paymentAccount?.id,
         category: category.name, categoryId: category.id, categoryIcon: category.icon,
-        paymentMethodCode: mode === 'statement' ? account!.bankCode : (jar.bankCode || 'CASH'),
-        bankName: findPaymentMethodByCode(mode === 'statement' ? account!.bankCode : (jar.bankCode || 'CASH'))!.shortName,
-        sourceAccountNumber: mode === 'statement' ? account!.accountNumber : jar.accountNumber,
+        paymentMethodCode: paymentAccount?.bankCode || 'CASH',
+        bankName: findPaymentMethodByCode(paymentAccount?.bankCode || 'CASH')!.shortName,
+        sourceAccountNumber: paymentAccount?.accountNumber,
         bankTransactionId: mode === 'statement' ? statementBankId(account!.bankCode, account!.accountNumber, item.reference) : undefined,
         allocations: item.type === 'income' ? [{ jarId: jar.id, amount: item.amount }] : undefined };
     });
@@ -274,6 +279,11 @@ export const TransactionImportModal: React.FC<Props> = ({ mode, onClose, onSave,
         <button type="button" aria-label={message('Đóng', 'Close')} onClick={onClose} className="rounded-lg p-2 hover:bg-zinc-800"><X size={20}/></button>
       </header>
       <div className="space-y-4 overflow-y-auto p-4 sm:p-6">
+        {mode === 'bulk' && <label className="block text-xs font-semibold">{message('Tài khoản thu/chi cho lô giao dịch', 'Receiving/spending account for this batch')}
+          <select className="form-input mt-1" value={accountId} onChange={event => setAccountId(event.target.value)}>
+            <option value="CASH">{message('Tiền mặt · không tác động ngân hàng', 'Cash · no bank effect')}</option>
+            {importAccounts.map(a => <option key={a.id} value={a.id}>{a.bankName} · {a.accountNumber}</option>)}
+          </select></label>}
         {mode === 'statement' ? <>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold">{message('Tài khoản nhận sao kê', 'Statement account')}
@@ -372,7 +382,7 @@ export const TransactionImportModal: React.FC<Props> = ({ mode, onClose, onSave,
               </div>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 <label>{message('Hũ', 'Jar')}<select className="form-input mt-1" value={item.jarId} onChange={(event) => update(item.key, { jarId: event.target.value })}><option value="">{message('Chọn hũ', 'Select jar')}</option>{options.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
-                <label>{message('Danh mục', 'Category')}<select className="form-input mt-1" value={item.categoryId} onChange={(event) => update(item.key, { categoryId: event.target.value })}><option value="">{message('Chọn danh mục', 'Select category')}</option>{categoryOptions.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
+                <label>{message('Danh mục', 'Category')}<select className="form-input mt-1" value={item.categoryId} onChange={(event) => update(item.key, { categoryId: event.target.value })}><option value="">{message('Chọn danh mục', 'Select category')}</option>{categoryOptions.map((entry) => <option key={entry.id} value={entry.id} data-no-translate={entry.isCustom ? 'true' : undefined}>{entry.name}</option>)}</select></label>
               </div>
               {mode === 'bulk' && <div className="mt-2 flex justify-end"><button type="button" onClick={() => removeBulkRow(item.key)} aria-label={message(`Xóa dòng ${index + 1}`, `Delete row ${index + 1}`)} className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 px-2.5 py-1.5 font-semibold text-rose-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"><Trash2 size={14}/>{message('Xóa dòng', 'Delete row')}</button></div>}
               {(draftWarning(item) || validation) && <p className="mt-2 text-amber-300">{draftWarning(item) || validation}</p>}

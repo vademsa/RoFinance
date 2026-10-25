@@ -6,7 +6,6 @@ import { CurrencyInput } from './CurrencyInput';
 import {
   deduplicateBankAccounts,
   getBankAccountBalance,
-  getJarsLinkedToBankAccount,
 } from '../utils/bankAccounts';
 import { CategoryIcon } from './CategoryIcon';
 import { findTransactionCategory } from '../constants/categories';
@@ -23,7 +22,8 @@ import {
 import { groupTransactionsByDate } from '../utils/transactionHistory';
 import { getRuntimePreferences } from '../lib/preferences';
 import { getHistoricalSummaryForDate } from '../utils/historicalBalances';
-import { isBankOnlyIncome } from '../../shared/transactions';
+import { isBankOnlyIncome, isBankOnlyExpense, isBankOnlyTransaction } from '../../shared/transactions';
+
 
 const formatTransactionGroupDate = (dateKey: string) => {
   const date = parseLocalDate(dateKey);
@@ -95,6 +95,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     setBalanceMessage('');
     try {
       await onUpdateBankBalance(account.id, value);
+      setBalanceInputs(current => { const next = { ...current }; delete next[account.id]; return next; });
       setBalanceMessage(`Đã cập nhật số dư ${account.bankName}.`);
     } catch (error: any) {
       setBalanceMessage(error.message || 'Không thể cập nhật số dư tài khoản');
@@ -164,7 +165,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 Số Dư Tài Khoản Hiện Tại
               </h2>
             </div>
-            <p className="mt-1 text-[10px] text-zinc-500">{isEnglish ? 'Available balances include linked jars and money not allocated to jars.' : 'Số dư khả dụng gồm tiền trong hũ liên kết và tiền chưa phân bổ.'}</p>
+            <p className="mt-1 text-[10px] text-zinc-500">{isEnglish ? 'Account balances follow confirmed balances and recorded cash flow. Jar limits are separate.' : 'Số dư theo số đã đối soát và giao dịch thu/chi thực tế. Hạn mức hũ được theo dõi độc lập.'}</p>
           </div>
           {onOpenBankAccountsModal && <button
             type="button"
@@ -178,11 +179,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         {balanceMessage && <div role="status" className="rounded-lg border border-zinc-800 bg-[#18181b] px-2.5 py-1.5 text-[10px] text-zinc-300">{balanceMessage}</div>}
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {uniqueAccounts.map((account) => {
-            const linkedJars = getJarsLinkedToBankAccount(activeJars, account);
-            const isDerivedFromJars = linkedJars.length > 0;
-            const displayedBalance = isDerivedFromJars
-              ? getBankAccountBalance(activeJars, account, transactions)
-              : account.balance;
+            const displayedBalance = getBankAccountBalance(activeJars, account, transactions);
             return (
             <article key={account.id} className="rounded-xl border border-zinc-800 bg-[#18181b] px-2.5 py-2">
               <div className="flex items-center justify-between gap-2">
@@ -197,22 +194,15 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 </div>
                 <span className="shrink-0 rounded-md border border-zinc-700 px-1.5 py-0.5 text-[8px] font-bold text-zinc-400">{account.bankCode}</span>
               </div>
-              {isDerivedFromJars ? (
-                <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-zinc-800/80 pt-1.5">
-                  <span className="text-[9px] font-semibold text-zinc-500">{isEnglish ? 'Available' : 'Khả dụng'} · {linkedJars.length} {isEnglish ? linkedJars.length === 1 ? 'jar' : 'jars' : 'hũ'}</span>
-                  <span className="truncate font-mono text-sm font-black text-indigo-300">{formatVND(displayedBalance, isAmountsHidden)}</span>
-                </div>
-              ) : (
                 <div className="mt-1.5 flex items-center gap-1.5 border-t border-zinc-800/80 pt-1.5">
-                  <CurrencyInput value={balanceInputs[account.id] ?? account.balance} onValueChange={(value) => setBalanceInputs((current) => ({ ...current, [account.id]: value }))} min={0} hideAmount={isAmountsHidden} aria-label={`Số dư ${account.bankName}`} className="h-8 min-w-0 flex-1 rounded-lg border border-zinc-700 bg-[#121214] px-2 text-right font-mono text-xs font-black text-white" />
+                  <CurrencyInput value={balanceInputs[account.id] ?? displayedBalance} onValueChange={(value) => setBalanceInputs((current) => ({ ...current, [account.id]: value }))} min={0} hideAmount={isAmountsHidden} aria-label={`Số dư ${account.bankName}`} className="h-11 min-w-0 flex-1 rounded-lg border border-zinc-700 bg-[#121214] px-2 text-right font-mono text-base font-black text-white" />
                   <button type="button" onClick={() => saveBalance(account)} disabled={savingAccountId === account.id} aria-label={`Lưu số dư ${account.bankName}`} className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-indigo-600 text-white transition-colors hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${savingAccountId === account.id ? 'animate-spin' : ''}`} /></button>
                 </div>
-              )}
-              {!isDerivedFromJars && <div className="mt-1 flex items-center justify-between gap-2 text-[8px] text-zinc-600"><span className="truncate">Đã lưu: {formatVND(account.balance, isAmountsHidden)}</span><span className="shrink-0">{account.lastSynced}</span></div>}
+              <div className="mt-1 text-[10px] text-zinc-400">{account.balanceReconciled === false ? (isEnglish ? 'Confirm actual balance: legacy values may have come from jar budgets.' : 'Cần đối soát số dư thực: số cũ có thể được suy ra từ hạn mức hũ.') : (isEnglish ? 'Independent account ledger' : 'Sổ tài khoản độc lập')}</div>
             </article>
             );
           })}
-          {uniqueAccounts.length === 0 && <div className="rounded-xl border border-dashed border-zinc-700 p-3 text-center text-[10px] text-zinc-500 sm:col-span-2 lg:col-span-3 xl:col-span-4">Hãy cấu hình ngân hàng và số tài khoản trong các hũ trước.</div>}
+          {uniqueAccounts.length === 0 && <div className="rounded-xl border border-dashed border-zinc-700 p-3 text-center text-[10px] text-zinc-500 sm:col-span-2 lg:col-span-3 xl:col-span-4">{isEnglish ? 'Add a bank account and confirm its actual balance in Manage accounts.' : 'Thêm tài khoản và xác nhận số dư thực trong Quản lý tài khoản.'}</div>}
         </div>
       </section>
 
@@ -381,7 +371,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     currentCycleStart,
                     currentCycleEnd,
                   );
-                  const referencesArchivedJar = (!isBankOnlyIncome(tx) && !activeJarIds.includes(tx.jarId)) ||
+                  const referencesArchivedJar = (!isBankOnlyTransaction(tx) && !activeJarIds.includes(tx.jarId)) ||
                     Boolean(tx.transferToJarId && !activeJarIds.includes(tx.transferToJarId)) ||
                     Boolean(tx.allocations?.some((allocation) => !activeJarIds.includes(allocation.jarId)));
                   const isPreviousCycleTransaction = tx.date < toLocalDateKey(currentCycleStart);
@@ -392,7 +382,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                       tx.allocations!.every((allocation) => historicalIds.has(allocation.jarId));
                   const canModify = !referencesArchivedJar && (
                     isCurrentCycleTransaction ||
-                    (isPreviousCycleTransaction && tx.type !== 'transfer' && (isBankOnlyIncome(tx) || hasValidPreviousSnapshot))
+                    (isPreviousCycleTransaction && tx.type !== 'transfer' && (isBankOnlyTransaction(tx) || hasValidPreviousSnapshot))
                   );
                   const categoryDefinition = tx.type === 'transfer'
                     ? undefined
@@ -401,6 +391,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                         tx.type,
                         jar?.code,
                         customCategories,
+                        tx.categoryId,
                       );
                   const categoryIcon = tx.categoryIcon
                     || (tx.type === 'transfer' ? 'rotate-ccw' : categoryDefinition?.icon)
@@ -419,7 +410,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                         {tx.counterpartyName && <div className="mt-1 text-[10px] text-zinc-500">Đối tác: <span data-no-translate="true">{tx.counterpartyName}</span></div>}
                       </td>
                       <td className="p-3.5">
-                        {isBankOnlyIncome(tx) ? <span className="text-xs text-emerald-400">{isEnglish ? 'Not allocated' : 'Không phân bổ'}</span> : isIncome && tx.allocations?.length ? (
+                        {isBankOnlyTransaction(tx) ? <span className={isBankOnlyExpense(tx) ? 'text-xs text-blue-300' : 'text-xs text-emerald-400'}>{isBankOnlyExpense(tx) ? (isEnglish ? 'Outside jars' : 'Ngoài hũ') : (isEnglish ? 'Not allocated' : 'Không phân bổ')}</span> : isIncome && tx.allocations?.length ? (
                           <div className="flex flex-wrap gap-1">
                             {tx.allocations.map((allocation) => {
                               const allocatedJar = jars.find((item) => item.id === allocation.jarId);
@@ -454,7 +445,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                       <td className="p-3.5 font-medium text-zinc-300">
                         {isTransfer && (tx.sourceBankCode || tx.destinationBankCode)
                           ? `${tx.sourceBankCode || '?'} → ${tx.destinationBankCode || '?'}`
-                          : isBankOnlyIncome(tx)
+                          : tx.bankAccountId
                             ? <span data-no-translate="true">{uniqueAccounts.find((account) => account.id === tx.bankAccountId)?.bankName || tx.bankName} · {uniqueAccounts.find((account) => account.id === tx.bankAccountId)?.accountNumber}</span>
                             : tx.bankName || jar?.bankName || '-'}
                       </td>

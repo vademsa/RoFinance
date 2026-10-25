@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   CreditCard,
@@ -17,17 +17,17 @@ import {
 } from 'lucide-react';
 import { DebtItem, Jar } from '../types';
 import { formatVND } from '../utils/formatters';
-import { getDisplayCurrencyCode } from '../lib/preferences';
+import { getDisplayCurrencyCode, getRuntimePreferences } from '../lib/preferences';
 import { formatDateVI } from '../utils/formatters';
 import {
   calculateMonthsCount,
   calculateDebtPaymentPlan,
   getEffectiveMonthlyDebtPayment,
-  recalculateJarsWithDebt,
 } from '../utils/debtCalculator';
 import { CurrencyInput } from './CurrencyInput';
-import { apiFetch } from '@platform';
 import { toLocalDateKey } from '../utils/monthlyCycle';
+import { createDebtAllocationProposal } from '../utils/debtAllocation';
+import { DebtAllocationPreview } from './DebtAllocationPreview';
 
 const defaultStartDate = () => toLocalDateKey(new Date());
 const defaultEndDate = () => {
@@ -58,16 +58,25 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
   isAmountsHidden = false,
 }) => {
   const [isAddingNew, setIsAddingNew] = useState(false);
-  const [reallocateStrategy, setReallocateStrategy] = useState<'FFA' | 'PROPORTIONAL'>('FFA');
-  const [affectedJarCodes, setAffectedJarCodes] = useState<string[]>([]);
+  const [reallocateStrategy, setReallocateStrategy] = useState<'FFA' | 'PROPORTIONAL'>('PROPORTIONAL');
+  const [affectedJarCodes, setAffectedJarCodes] = useState<string[]>(() => jars.filter(jar => jar.code !== 'DEBT').map(jar => jar.code));
   const [lockGiveJar, setLockGiveJar] = useState(false);
   const [fixedGiveAmount, setFixedGiveAmount] = useState<number | ''>(
-    () => jars.find((jar) => jar.code === 'GIVE')?.targetBudget || ''
+    () => jars.find((jar) => jar.code === 'GIVE')?.cycleAllocation ?? ''
   );
-  const [aiSuggestion, setAiSuggestion] = useState<Record<string, number> | null>(null);
-  const [aiReason, setAiReason] = useState('');
-  const [isLoadingAiSuggestion, setIsLoadingAiSuggestion] = useState(false);
-  const [aiSuggestionError, setAiSuggestionError] = useState('');
+  const [proposal, setProposal] = useState<{ key: string; jars: Jar[] } | null>(null);
+  const [allocationNotice, setAllocationNotice] = useState('');
+  const language = getRuntimePreferences().language;
+  const t = (vi: string, en: string) => language === 'en' ? en : vi;
+  useEffect(() => {
+    if (!isOpen) { setProposal(null); setAllocationNotice(''); }
+    else {
+      const give = jars.find(jar => jar.code === 'GIVE');
+      setFixedGiveAmount(give?.cycleAllocation ?? give?.targetBudget ?? '');
+      if (!give) setLockGiveJar(false);
+      if (!jars.some(jar => jar.code === 'FFA')) setReallocateStrategy('PROPORTIONAL');
+    }
+  }, [isOpen]);
 
   // Form states
   const [debtName, setDebtName] = useState('');
@@ -122,16 +131,16 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
 
   const computedDebtJarPercent =
     monthlyIncome > 0
-      ? Number(((totalActiveMonthlyPayment / monthlyIncome) * 100).toFixed(2))
+      ? Math.max(0, Math.ceil((totalActiveMonthlyPayment / monthlyIncome) * 10000 - 1e-8)) / 100
       : 0;
 
   const effectiveAffectedJarCodes =
     reallocateStrategy === 'FFA'
       ? jars.filter((jar) => jar.code !== 'DEBT' && !(lockGiveJar && jar.code === 'GIVE'))
           .map((jar) => jar.code)
-      : affectedJarCodes.filter((code) => !(lockGiveJar && code === 'GIVE'));
+      : affectedJarCodes.filter((code) => jars.some(jar => jar.code === code && code !== 'DEBT') && !(lockGiveJar && code === 'GIVE'));
   const hasValidAffectedJars =
-    hasDebtJar && (reallocateStrategy === 'FFA' || effectiveAffectedJarCodes.length > 0);
+    hasDebtJar && effectiveAffectedJarCodes.length > 0;
   const reallocationOptions = {
     strategy: reallocateStrategy,
     affectedJarCodes: effectiveAffectedJarCodes,
@@ -140,26 +149,17 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
         ? { GIVE: Math.max(0, fixedGiveAmount) }
         : undefined,
   };
-  const allocationPreview = hasValidAffectedJars
-    ? recalculateJarsWithDebt(jars, debtItems, monthlyIncome, reallocationOptions)
-    : jars;
+  const allocationResult = lockGiveJar && fixedGiveAmount === ''
+    ? { error: 'fixed' as const }
+    : createDebtAllocationProposal(jars, debtItems, monthlyIncome, reallocationOptions);
+  const allocationPreview = allocationResult.jars || jars;
+  const allocationBasisKey = JSON.stringify({ jars, debtItems, monthlyIncome, reallocationOptions });
   const previewTotalPercent = Number(
     allocationPreview.reduce((sum, jar) => sum + jar.percentage, 0).toFixed(2)
   );
   const previewDebtBudget =
     allocationPreview.find((jar) => jar.code === 'DEBT')?.targetBudget || 0;
   const debtBudgetShortfall = Math.max(0, totalActiveMonthlyPayment - previewDebtBudget);
-
-  const applyJarReallocation = (updatedDebts: DebtItem[]) => {
-    if (!hasDebtJar || !hasValidAffectedJars) return;
-    const updatedJars = recalculateJarsWithDebt(
-      jars,
-      updatedDebts,
-      monthlyIncome,
-      reallocationOptions
-    );
-    onApplyNewJarAllocations(updatedJars);
-  };
 
   const toggleAffectedJar = (jarCode: string) => {
     setAffectedJarCodes((current) => {
@@ -203,8 +203,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
     const updatedDebts = [...debtItems, newDebt];
     onUpdateDebts(updatedDebts);
 
-    // Auto recalculate jars with the new debt list
-    applyJarReallocation(updatedDebts);
+    setAllocationNotice(t('Đã lưu khoản nợ. Tỷ lệ các hũ chưa thay đổi; hãy xem đề xuất phân bổ nếu cần.', 'Debt saved. Jar rates are unchanged; review a reallocation proposal if needed.'));
 
     // Reset form
     setDebtName('');
@@ -236,66 +235,29 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
 
     onUpdateDebts(updatedDebts);
 
-    // Auto recalculate jars with the updated status
-    applyJarReallocation(updatedDebts);
+    setAllocationNotice(t('Đã cập nhật khoản nợ. Tỷ lệ các hũ chưa thay đổi; hãy xem đề xuất phân bổ nếu cần.', 'Debt updated. Jar rates are unchanged; review a reallocation proposal if needed.'));
   };
 
   const handleDeleteDebt = (debtId: string) => {
     const updatedDebts = debtItems.filter((d) => d.id !== debtId);
     onUpdateDebts(updatedDebts);
 
-    applyJarReallocation(updatedDebts);
+    setAllocationNotice(t('Đã xóa khoản nợ. Tỷ lệ các hũ chưa thay đổi; hãy xem đề xuất phân bổ nếu cần.', 'Debt deleted. Jar rates are unchanged; review a reallocation proposal if needed.'));
   };
 
   const handleTriggerAutoRecalculate = () => {
-    applyJarReallocation(debtItems);
-  };
-
-  const handleRequestAiSuggestion = async () => {
-    setIsLoadingAiSuggestion(true);
-    setAiSuggestionError('');
-    try {
-      const response = await apiFetch('/api/ai/jar-allocation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jars, monthlyIncome }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Không thể lấy gợi ý từ AI');
-      }
-      setAiSuggestion(data.allocation);
-      setAiReason(data.reason);
-    } catch (error: any) {
-      setAiSuggestionError(error.message);
-    } finally {
-      setIsLoadingAiSuggestion(false);
-    }
-  };
-
-  const handleApplyAiSuggestion = () => {
-    if (!aiSuggestion) return;
-    const updatedJars = jars.map((jar) => {
-      const percentage = aiSuggestion[jar.code];
-      return percentage === undefined
-        ? jar
-        : {
-            ...jar,
-            percentage,
-            targetBudget: Math.round((monthlyIncome * percentage) / 100),
-          };
-    });
-    onApplyNewJarAllocations(updatedJars);
-    setAiSuggestion(null);
+    if (!allocationResult.jars || !hasValidAffectedJars) return;
+    setProposal({ key: allocationBasisKey, jars: allocationResult.jars });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-stretch sm:items-center justify-center bg-black/80 sm:backdrop-blur-md sm:p-4 overflow-hidden">
-      <div className="bg-[#18181b] rounded-none sm:rounded-[32px] shadow-2xl max-w-4xl w-full h-[100dvh] sm:h-auto sm:max-h-[calc(100dvh-2rem)] overflow-hidden border-0 sm:border border-zinc-800 sm:my-4 text-zinc-100 flex flex-col">
+      <div role="dialog" aria-modal="true" aria-labelledby="debt-management-title" className="bg-[#18181b] rounded-none sm:rounded-[32px] shadow-2xl max-w-4xl w-full h-[100dvh] sm:h-auto sm:max-h-[calc(100dvh-2rem)] overflow-hidden border-0 sm:border border-zinc-800 sm:my-4 text-zinc-100 flex flex-col">
         {/* Header */}
         <div className="bg-[#121214] text-white px-4 py-4 sm:p-6 relative border-b border-zinc-800 shrink-0">
           <button
             onClick={onClose}
+            aria-label={t('Đóng quản lý nợ', 'Close debt management')}
             className="absolute top-3 right-3 sm:top-5 sm:right-5 text-zinc-400 hover:text-white p-2 rounded-xl hover:bg-zinc-800 transition-colors z-10"
           >
             <X className="w-5 h-5" />
@@ -306,15 +268,15 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h2 className="text-base sm:text-xl font-black text-white tracking-tight leading-tight">
-                  Tự Động Tính % Hũ Trả Nợ (DEBT) & Tái Phân Bổ
+                <h2 data-no-translate="true" id="debt-management-title" className="text-base sm:text-xl font-black text-white tracking-tight leading-tight">
+                  {t('Quản lý nợ & phân bổ hũ', 'Manage debts & jar allocation')}
                 </h2>
                 <span className="hidden md:inline text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                  Smart Auto-Reallocate
+                  Review & Confirm
                 </span>
               </div>
-              <p className="hidden sm:block text-xs text-zinc-400 mt-0.5">
-                Nhập danh sách khoản nợ và thời gian trả. Ứng dụng sẽ tự tính % Hũ DEBT hàng tháng và tự động tái phân bổ % sang các hũ khác khi trả xong nợ!
+              <p data-no-translate="true" className="hidden sm:block text-xs text-zinc-400 mt-0.5">
+                {t('Cập nhật khoản nợ không tự thay đổi tỷ lệ hũ. Xem đề xuất và xác nhận trước khi phân bổ lại.', 'Updating debts does not change jar rates. Review and confirm a proposal before reallocating.')}
               </p>
             </div>
           </div>
@@ -322,6 +284,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
 
         {/* Content */}
         <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto overscroll-contain flex-1">
+          {allocationNotice && <p data-no-translate="true" role="status" className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-300">{allocationNotice}</p>}
           {!hasDebtJar && (
             <div role="alert" className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-200">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -347,11 +310,11 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
               <div className="flex items-center w-full md:w-auto">
                 <button
                   onClick={handleTriggerAutoRecalculate}
-                  disabled={!hasValidAffectedJars}
+                  disabled={!hasValidAffectedJars || !allocationResult.jars}
                   className="w-full md:w-auto justify-center px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition-all flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <RefreshCw className="w-4 h-4" />
-                  <span>Áp Dụng Phân Bổ Mới</span>
+                  <span data-no-translate="true">{t('Xem đề xuất phân bổ', 'Review allocation proposal')}</span>
                 </button>
               </div>
             </div>
@@ -366,7 +329,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
               </div>
 
               <div className="bg-[#1c1c20] p-3 rounded-xl border border-zinc-800">
-                <div className="text-[10px] text-zinc-400 font-bold uppercase">Tỷ lệ Hũ DEBT tự động</div>
+                <div data-no-translate="true" className="text-[10px] text-zinc-400 font-bold uppercase">{t('Tỷ lệ trả nợ đề xuất', 'Proposed debt rate')}</div>
                 <div className="text-sm font-black font-mono text-indigo-400 mt-0.5">
                   {computedDebtJarPercent}% thu nhập
                 </div>
@@ -382,40 +345,43 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
 
             {/* Reallocation Strategy Selector */}
             <div className="pt-2">
-              <label className="block text-[11px] font-bold text-zinc-300 uppercase tracking-wider mb-2">
-                Chiến lược tự động tái phân bổ khi trả hết nợ:
+              <label data-no-translate="true" className="block text-[11px] font-bold text-zinc-300 uppercase tracking-wider mb-2">
+                {t('Cách tạo đề xuất phân bổ:', 'Reallocation proposal strategy:')}
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={() => setReallocateStrategy('FFA')}
+                  disabled={!jars.some(jar => jar.code === 'FFA')}
+                  aria-pressed={reallocateStrategy === 'FFA'}
                   className={`p-3 rounded-xl border text-left transition-all ${
                     reallocateStrategy === 'FFA'
                       ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
                       : 'bg-[#1c1c20] border-zinc-800 text-zinc-400 hover:border-zinc-700'
                   }`}
                 >
-                  <div className="flex items-center space-x-2 font-bold text-xs text-white">
+                  <div data-no-translate="true" className="flex items-center space-x-2 font-bold text-xs text-white">
                     <TrendingUp className="w-4 h-4 text-emerald-400" />
-                    <span>Ưu tiên điều chỉnh Hũ Tự Do Tài Chính (FFA)</span>
+                    <span>{t('Ưu tiên điều chỉnh Hũ Tự Do Tài Chính (FFA)', 'Prioritize Financial Freedom (FFA)')}</span>
                   </div>
-                  <p className="text-[11px] text-zinc-400 mt-1">
-                    Lấy từ FFA trước; nếu chưa đủ, giảm tỷ lệ các hũ còn lại theo tỷ trọng để DEBT nhận đủ mức trả nợ.
+                  <p data-no-translate="true" className="text-[11px] text-zinc-400 mt-1">
+                    {t('Đề xuất chuyển phần dư vào FFA. Nếu nợ tăng, lấy từ FFA trước rồi mới giảm các hũ khác.', 'Propose moving freed allocation to FFA. If debt increases, use FFA before reducing other jars.')}
                   </p>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setReallocateStrategy('PROPORTIONAL')}
+                  aria-pressed={reallocateStrategy === 'PROPORTIONAL'}
                   className={`p-3 rounded-xl border text-left transition-all ${
                     reallocateStrategy === 'PROPORTIONAL'
                       ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-300'
                       : 'bg-[#1c1c20] border-zinc-800 text-zinc-400 hover:border-zinc-700'
                   }`}
                 >
-                  <div className="flex items-center space-x-2 font-bold text-xs text-white">
+                  <div data-no-translate="true" className="flex items-center space-x-2 font-bold text-xs text-white">
                     <Zap className="w-4 h-4 text-indigo-400" />
-                    <span>Tự phân bổ đều theo tỷ lệ các hũ còn lại</span>
+                    <span>{t('Chia theo tỷ trọng các hũ đã chọn', 'Distribute proportionally across selected jars')}</span>
                   </div>
                   <p className="text-[11px] text-zinc-400 mt-1">
                     Chia phần % còn lại theo tỷ trọng của riêng các hũ bạn cho phép thay đổi.
@@ -425,7 +391,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
             </div>
 
             <div className="pt-3 border-t border-zinc-800/80 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-[#1c1c20] p-3">
+              {jars.some(jar => jar.code === 'GIVE') && <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-[#1c1c20] p-3">
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -434,7 +400,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                       setLockGiveJar(event.target.checked);
                       if (event.target.checked && fixedGiveAmount === '') {
                         setFixedGiveAmount(
-                          jars.find((jar) => jar.code === 'GIVE')?.targetBudget || 0
+                          jars.find((jar) => jar.code === 'GIVE')?.cycleAllocation ?? 0
                         );
                       }
                     }}
@@ -451,8 +417,10 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                 </label>
                 {lockGiveJar && (
                   <div className="sm:w-48">
+                    <label data-no-translate="true" htmlFor="debt-fixed-give" className="sr-only">{t('Hạn mức cố định hũ Cho đi', 'Fixed giving jar limit')}</label>
                     <CurrencyInput
                       value={fixedGiveAmount}
+                      id="debt-fixed-give"
                       onValueChange={setFixedGiveAmount}
                       min={0}
                       hideAmount={isAmountsHidden}
@@ -461,7 +429,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                     />
                   </div>
                 )}
-              </div>
+              </div>}
 
               {reallocateStrategy === 'PROPORTIONAL' && (
                 <div>
@@ -480,6 +448,8 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                             key={jar.code}
                             type="button"
                             disabled={isGiveLocked}
+                            aria-pressed={isSelected}
+                            data-select-jar={jar.code}
                             onClick={() => toggleAffectedJar(jar.code)}
                             className={`px-3 py-2 rounded-lg border text-xs font-bold transition-all ${
                               isSelected
@@ -507,7 +477,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
 
               <div
                 className={`p-3 rounded-xl border text-xs ${
-                  debtBudgetShortfall > 1
+                  allocationResult.error
                     ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
                     : 'border-emerald-500/20 bg-emerald-500/5 text-emerald-300'
                 }`}
@@ -515,6 +485,12 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                 <div className="font-bold">
                   Tổng tỷ lệ sau phân bổ: {previewTotalPercent}%
                 </div>
+                {allocationResult.error && <p data-no-translate="true" role="alert" className="mt-2">
+                  {allocationResult.error === 'income' ? t('Cần cập nhật thu nhập lớn hơn 0 để tính đề xuất; tỷ lệ hiện tại được giữ nguyên.', 'Set income greater than zero to calculate a proposal; current rates are preserved.')
+                    : allocationResult.error === 'selection' ? t('Chọn ít nhất một hũ có thể thay đổi và đảm bảo mẫu có hũ Trả nợ.', 'Select at least one editable jar and use a plan with a debt jar.')
+                    : allocationResult.error === 'fixed' ? t('Các hạn mức cố định không hợp lệ hoặc vượt 100%. Hãy điều chỉnh trước khi xem đề xuất.', 'Fixed limits are invalid or exceed 100%. Adjust them before reviewing a proposal.')
+                    : t('Hũ trả nợ chưa đủ hạn mức cho các khoản nợ còn lại. Chọn thêm hũ có thể thay đổi hoặc giảm hạn mức cố định.', 'The debt limit cannot cover remaining payments. Allow more jars to change or reduce fixed limits.')}
+                </p>}
                 {debtBudgetShortfall > 1 && (
                   <div className="mt-1">
                     Các hũ đang khóa chiếm quá nhiều tỷ lệ, Hũ DEBT còn thiếu{' '}
@@ -526,67 +502,9 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-purple-500/30 bg-purple-500/5 p-4 sm:p-5 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2 text-sm font-black text-white">
-                  <Sparkles className="w-4 h-4 text-purple-400" />
-                  <span>AI gợi ý phân bổ sau khi hết nợ</span>
-                </div>
-                <p className="text-[11px] text-zinc-400 mt-1">
-                  Giữ nguyên NEC và GIVE, đưa DEBT về 0%, chỉ chia phần dư cho SAFE, FFA, EDU và PLAY.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleRequestAiSuggestion}
-                disabled={activeDebts.length > 0 || isLoadingAiSuggestion}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <Sparkles className={`w-4 h-4 ${isLoadingAiSuggestion ? 'animate-pulse' : ''}`} />
-                <span>{isLoadingAiSuggestion ? 'AI đang phân tích...' : 'Nhận gợi ý AI'}</span>
-              </button>
-            </div>
-
-            {activeDebts.length > 0 && (
-              <div className="text-[11px] text-amber-300">
-                Hãy đánh dấu tất cả khoản nợ đã trả xong trước khi yêu cầu AI tái phân bổ.
-              </div>
-            )}
-            {aiSuggestionError && (
-              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
-                {aiSuggestionError}
-              </div>
-            )}
-            {aiSuggestion && (
-              <div className="rounded-xl border border-purple-500/20 bg-[#121214] p-3 space-y-3">
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                  {['NEC', 'GIVE', 'DEBT', 'SAFE', 'FFA', 'EDU', 'PLAY'].map((code) => (
-                    <div key={code} className="rounded-lg border border-zinc-800 bg-[#1c1c20] p-2 text-center">
-                      <div className="text-[10px] font-bold text-zinc-500">{code}</div>
-                      <div className="text-sm font-black font-mono text-white">
-                        {aiSuggestion[code]}%
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-zinc-300 leading-relaxed">{aiReason}</p>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <span className="text-[11px] font-bold text-emerald-400">
-                    Tổng đề xuất:{' '}
-                    {Object.values(aiSuggestion).reduce((sum, value) => sum + value, 0).toFixed(2)}%
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleApplyAiSuggestion}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
-                  >
-                    Áp dụng gợi ý này
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <p data-no-translate="true" className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3 text-xs leading-relaxed text-zinc-400">
+            {t('Bạn có thể nhờ AI gợi ý trong cửa sổ đề xuất, kể cả khi còn nợ. AI chỉ điều chỉnh các hũ được chọn; bạn luôn là người xác nhận cuối cùng.', 'Ask AI for suggestions in the proposal, even with remaining debts. AI only adjusts selected jars; you always give the final confirmation.')}
+          </p>
 
           {/* Add New Debt Toggle Button */}
           <div className="flex flex-col min-[380px]:flex-row min-[380px]:items-center justify-between gap-2">
@@ -871,8 +789,8 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
               <div className="bg-[#121214] p-8 rounded-2xl border border-zinc-800 text-center text-zinc-400 space-y-2">
                 <ShieldCheck className="w-10 h-10 mx-auto text-emerald-400" />
                 <h4 className="font-bold text-white text-sm">Hiện Không Có Khoản Nợ Nào</h4>
-                <p className="text-xs max-w-sm mx-auto">
-                  Tất cả các khoản nợ đã được trả sạch! Hũ DEBT tự động giảm về 0% và toàn bộ số tiền thu nhập được chuyển sang đầu tư & tích lũy.
+                <p data-no-translate="true" className="text-xs max-w-sm mx-auto">
+                  {t('Chưa có khoản nợ nào. Bạn có thể xem đề xuất đưa hũ DEBT về 0%; tỷ lệ chỉ đổi khi bạn xác nhận.', 'No debts recorded. You can review a proposal setting DEBT to 0%; rates only change after confirmation.')}
                 </p>
               </div>
             ) : (
@@ -885,6 +803,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                 return (
                   <div
                     key={debt.id}
+                    data-debt-id={debt.id}
                     className={`p-4 rounded-2xl border transition-all ${
                       isPaid
                         ? 'bg-[#121214]/60 border-zinc-800/80 opacity-75'
@@ -951,6 +870,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                         <div className="flex items-center space-x-1.5">
                           <button
                             onClick={() => handleToggleStatus(debt.id)}
+                            aria-label={`${isPaid ? t('Đánh dấu chưa trả hết', 'Mark as unpaid') : t('Đánh dấu đã hoàn thành', 'Mark as paid')} · ${debt.name}`}
                             title={isPaid ? 'Đánh dấu chưa trả hết' : 'Đánh dấu đã hoàn thành'}
                             className={`p-2 rounded-xl border text-xs font-bold transition-all ${
                               isPaid
@@ -962,6 +882,7 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
                           </button>
                           <button
                             onClick={() => handleDeleteDebt(debt.id)}
+                            aria-label={`${t('Xóa khoản nợ', 'Delete debt')} · ${debt.name}`}
                             title="Xóa khoản nợ"
                             className="p-2 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-all"
                           >
@@ -988,10 +909,18 @@ export const DebtManagementModal: React.FC<DebtManagementModalProps> = ({
             onClick={onClose}
             className="w-full sm:w-auto px-6 py-2.5 rounded-xl sm:rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all shadow-lg shadow-indigo-600/20"
           >
-            Đóng & Áp Dụng
+            {t('Đóng', 'Close')}
           </button>
         </div>
       </div>
+      {proposal && <DebtAllocationPreview key={proposal.key} currentJars={jars} draftJars={proposal.jars}
+        editableCodes={effectiveAffectedJarCodes} income={monthlyIncome} stale={proposal.key !== allocationBasisKey}
+        hidden={isAmountsHidden} onClose={() => setProposal(null)} onConfirm={updated => {
+          if (proposal.key !== allocationBasisKey) return;
+          onApplyNewJarAllocations(updated);
+          setProposal(null);
+          setAllocationNotice(t('Đã áp dụng tỷ lệ phân bổ bạn xác nhận.', 'Your confirmed allocation has been applied.'));
+        }} />}
     </div>
   );
 };

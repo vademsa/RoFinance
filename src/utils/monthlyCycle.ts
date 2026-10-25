@@ -1,5 +1,5 @@
 import type { Jar, JarCarryover, MonthlyCycleSummary, Transaction } from '../types';
-import { isBankOnlyIncome } from '../../shared/transactions';
+import { isBankOnlyIncome, isBankOnlyExpense } from '../../shared/transactions';
 
 export function normalizeResetDay(day: number) {
   return Math.min(31, Math.max(1, Math.round(Number(day) || 1)));
@@ -67,7 +67,7 @@ export function getCycleTransactions(
 
 export function getExpenseByJar(transactions: Transaction[]) {
   return transactions.reduce<Record<string, number>>((totals, transaction) => {
-    if (transaction.type === 'expense') {
+    if (transaction.type === 'expense' && !isBankOnlyExpense(transaction)) {
       totals[transaction.jarId] = (totals[transaction.jarId] || 0) + transaction.amount;
     }
     return totals;
@@ -231,6 +231,7 @@ export function createMonthlyCycleSummary(
   const cycleTransactions = getCycleTransactions(transactions, cycleStart, cycleEnd);
   const expenseByJar = getExpenseByJar(cycleTransactions);
   const unallocatedIncome = cycleTransactions.filter(isBankOnlyIncome).reduce((total, item) => total + item.amount, 0);
+  const unallocatedExpense = cycleTransactions.filter(isBankOnlyExpense).reduce((total, item) => total + item.amount, 0);
   const cycleEndInclusive = new Date(cycleEnd);
   cycleEndInclusive.setDate(cycleEndInclusive.getDate() - 1);
   const jarBreakdown = jars.map((rawJar) => {
@@ -260,7 +261,8 @@ export function createMonthlyCycleSummary(
     cycleEnd: toLocalDateKey(cycleEndInclusive),
     income: Math.max(0, fallbackIncome) + unallocatedIncome,
     unallocatedIncome,
-    expense: Object.values(expenseByJar).reduce((total, amount) => total + amount, 0),
+    expense: Object.values(expenseByJar).reduce((total, amount) => total + amount, 0) + unallocatedExpense,
+    unallocatedExpense,
     transactionCount: cycleTransactions.length,
     spendingByJar: jars.map((jar) => ({
       jarId: jar.id,

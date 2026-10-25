@@ -40,8 +40,9 @@ interface CategoryPickerProps {
   categories: TransactionCategory[];
   customCategories: TransactionCategory[];
   value: string;
+  valueId?: string;
+  valueIcon?: CategoryIconKey;
   type: 'expense' | 'income';
-  jarCode?: string;
   onChange: (category: TransactionCategory) => void;
   onAddCategory: (category: TransactionCategory) => void;
   onUpdateCategory: (category: TransactionCategory) => void;
@@ -51,8 +52,9 @@ export function CategoryPicker({
   categories,
   customCategories,
   value,
+  valueId,
+  valueIcon,
   type,
-  jarCode,
   onChange,
   onAddCategory,
   onUpdateCategory,
@@ -67,7 +69,10 @@ export function CategoryPicker({
   const [error, setError] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
-  const selected = categories.find((category) => category.name === value) || categories[0];
+  const selected = (valueId ? categories.find(category => category.id === valueId) : undefined)
+    || categories.find(category => category.name === value);
+  const isSelected = (category: TransactionCategory) => valueId
+    ? category.id === valueId && category.name === value : category.name === value;
   const language = getRuntimePreferences().language;
 
   useEffect(() => {
@@ -156,9 +161,9 @@ export function CategoryPicker({
     }
 
     const categoryType = editingCategory?.type || type;
-    const categoryJarCode = categoryType === 'expense' ? (editingCategory?.jarCode || jarCode) : undefined;
-    const categoriesInScope = getTransactionCategories(categoryType, categoryJarCode, customCategories);
-    if (categoriesInScope.some((category) => (
+    const categoriesInScope = getTransactionCategories(categoryType, undefined, customCategories);
+    const unchangedName = editingCategory && normalizeForComparison(editingCategory.name) === normalizeForComparison(name);
+    if (!unchangedName && categoriesInScope.some((category) => (
       category.id !== editingCategory?.id
       && normalizeForComparison(category.name) === normalizeForComparison(name)
     ))) {
@@ -186,7 +191,6 @@ export function CategoryPicker({
       name,
       type,
       icon: newIcon,
-      jarCode: type === 'expense' ? jarCode : undefined,
       isCustom: true,
       createdAt: new Date().toISOString(),
     };
@@ -206,10 +210,10 @@ export function CategoryPicker({
         className="flex w-full cursor-pointer items-center gap-2 rounded-2xl border border-zinc-700 bg-[#121214] p-3 text-left text-xs font-semibold text-white transition-colors hover:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
       >
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-300">
-          <CategoryIcon name={selected?.icon} />
+          <CategoryIcon name={valueIcon || selected?.icon} />
         </span>
-        <span data-no-translate={selected?.isCustom ? 'true' : undefined} className="min-w-0 flex-1 truncate">
-          {selected?.name || 'Chọn danh mục'}
+        <span data-no-translate={selected?.isCustom || valueId?.startsWith('custom-') ? 'true' : undefined} className="min-w-0 flex-1 truncate">
+          {value || 'Chọn danh mục'}
         </span>
         <ChevronDown className={`h-4 w-4 text-zinc-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -235,8 +239,9 @@ export function CategoryPicker({
                   <div
                     key={category.id}
                     data-ui="category-picker-option"
-                    data-selected={category.name === value ? 'true' : 'false'}
-                    className={`flex items-center rounded-xl border transition-colors ${category.name === value ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-200' : 'border-zinc-800 bg-[#18181b] text-zinc-300 hover:border-zinc-700 hover:text-white'}`}
+                    data-category-id={category.id}
+                    data-selected={isSelected(category) ? 'true' : 'false'}
+                    className={`flex items-center rounded-xl border transition-colors ${isSelected(category) ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-200' : 'border-zinc-800 bg-[#18181b] text-zinc-300 hover:border-zinc-700 hover:text-white'}`}
                   >
                     <button
                       type="button"
@@ -248,7 +253,7 @@ export function CategoryPicker({
                     >
                       <CategoryIcon name={category.icon} className="h-3.5 w-3.5 shrink-0" />
                       <span data-no-translate={category.isCustom ? 'true' : undefined} className="min-w-0 flex-1 truncate">{category.name}</span>
-                      {category.name === value && <Check className="h-3.5 w-3.5 shrink-0" />}
+                      {isSelected(category) && <Check className="h-3.5 w-3.5 shrink-0" />}
                     </button>
                     {category.isCustom && (
                       <button
@@ -313,7 +318,7 @@ export function CategoryPicker({
                     <div className="min-w-0 flex-1">
                       <p data-no-translate="true" className="truncate text-[11px] font-bold text-zinc-200">{category.name}</p>
                       <p className="text-[9px] text-zinc-500">
-                        {category.type === 'income' ? 'Khoản thu' : `Khoản chi · Hũ ${category.jarCode || 'khác'}`}
+                        {category.type === 'income' ? 'Khoản thu' : 'Khoản chi · Dùng cho mọi hũ'}
                       </p>
                     </div>
                     <button
@@ -339,7 +344,7 @@ export function CategoryPicker({
                   <p className="mt-0.5 text-[10px] text-zinc-500">
                     {(editingCategory?.type || type) === 'income'
                       ? 'Áp dụng cho các khoản thu'
-                      : `Áp dụng cho hũ ${editingCategory?.jarCode || jarCode || ''}`}
+                      : 'Áp dụng cho tất cả hũ và chi tiêu ngoài hũ'}
                   </p>
                 </div>
                 <button type="button" aria-label="Hủy chỉnh sửa danh mục" onClick={cancelEditor} className="cursor-pointer rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-white">

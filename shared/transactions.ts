@@ -3,3 +3,13 @@ export function isBankOnlyIncome(transaction: { type?: unknown; bankAccountId?: 
   return transaction.type === 'income' && typeof transaction.bankAccountId === 'string'
     && transaction.bankAccountId.length > 0 && transaction.jarId === '';
 }
+
+/** A bank-only expense is recorded directly against a bank account, not a jar. */
+export function isBankOnlyExpense(transaction: { type?: unknown; bankAccountId?: unknown; jarId?: unknown }) {
+  return transaction.type === 'expense' && typeof transaction.bankAccountId === 'string'
+    && transaction.bankAccountId.length > 0 && transaction.jarId === '';
+}
+
+export function isBankOnlyTransaction(transaction: { type?: unknown; bankAccountId?: unknown; jarId?: unknown }) {
+  return isBankOnlyIncome(transaction) || isBankOnlyExpense(transaction);
+}

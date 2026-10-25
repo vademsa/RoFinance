@@ -61,7 +61,7 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
-      <div className="bg-[#18181b] rounded-[32px] shadow-2xl max-w-3xl w-full overflow-hidden border border-zinc-800 my-8 text-zinc-100">
+      <div role="dialog" aria-modal="true" aria-labelledby="income-allocation-title" className="bg-[#18181b] rounded-[32px] shadow-2xl max-w-3xl w-full overflow-hidden border border-zinc-800 my-8 text-zinc-100">
         {/* Header */}
         <div className="bg-[#121214] text-white p-6 relative border-b border-zinc-800">
           <button
@@ -75,9 +75,10 @@ export const IncomeAllocatorModal: React.FC<IncomeAllocatorModalProps> = ({
               <Calculator className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-white tracking-tight">Phân Bổ Hũ Tài Chính Hàng Tháng</h2>
+              <h2 id="income-allocation-title" className="text-xl font-black text-white tracking-tight">Phân Bổ Hũ Tài Chính Hàng Tháng</h2>
               <p className="text-xs text-zinc-400 mt-0.5">
                 Nhập thu nhập và tỷ lệ cho từng hũ; RoFinance chỉ lưu kế hoạch bạn xác nhận
+                . Đây là hạn mức dự kiến, không ghi nhận tiền vào ngân hàng.
               </p>
             </div>
           </div>

@@ -5,7 +5,7 @@ export interface StoredCustomCategory {
   name: string;
   type: 'expense' | 'income';
   icon: CategoryIconKey;
-  jarCode?: string;
+  jarCode?: string; // Legacy provenance only; never restricts which jar can use it.
   isCustom: true;
   createdAt: string;
 }
@@ -50,7 +50,7 @@ export function validateCustomCategories(
     }
 
     let jarCode: string | undefined;
-    if (category.type === 'expense') {
+    if (category.type === 'expense' && category.jarCode !== undefined) {
       if (typeof category.jarCode !== 'string' || !/^[A-Za-z0-9_-]{1,32}$/.test(category.jarCode)) {
         return { error: 'Hũ liên kết với danh mục không hợp lệ' };
       }
@@ -59,6 +59,8 @@ export function validateCustomCategories(
     const createdAt = typeof category.createdAt === 'string' && Number.isFinite(Date.parse(category.createdAt))
       ? new Date(category.createdAt).toISOString()
       : new Date().toISOString();
+    // Keep old per-jar duplicates readable/saveable without merging their IDs.
+    // New clients create unscoped categories and prevent duplicates globally.
     const duplicateKey = `${category.type}:${jarCode || '*'}:${normalizeKey(name)}`;
     if (seen.has(duplicateKey)) return { error: `Danh mục “${name}” bị trùng` };
     seen.add(duplicateKey);

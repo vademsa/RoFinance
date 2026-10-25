@@ -41,11 +41,11 @@ import {
 import {
   deduplicateBankAccounts,
   editBankAccountDetails,
-  getBankOnlyIncomeTotal,
+  getBankOpeningBalance,
   syncBankAccountsWithJars,
 } from './utils/bankAccounts';
-import { isBankOnlyIncome } from '../shared/transactions';
-import { syncBankIncomeSummaries } from './utils/bankIncome';
+import { isBankOnlyIncome, isBankOnlyTransaction } from '../shared/transactions';
+import { syncBankTransactionSummaries } from './utils/bankIncome';
 import {
   adjustCompletedCycleIncome,
   applyCurrentCycleSpending,
@@ -77,6 +77,7 @@ import { useAppUpdates } from './hooks/useAppUpdates';
 import { CharacterCompanion } from './components/character/CharacterCompanion';
 
 const AnalyticsCharts = lazy(() => import('./components/AnalyticsCharts').then((module) => ({ default: module.AnalyticsCharts })));
+const OverviewDashboard = lazy(() => import('./components/OverviewDashboard').then((module) => ({ default: module.OverviewDashboard })));
 const InvestmentDashboard = lazy(() => import('./components/InvestmentDashboard').then((module) => ({ default: module.InvestmentDashboard })));
 const AIAdvisorDrawer = lazy(() => import('./components/AIAdvisorDrawer').then((module) => ({ default: module.AIAdvisorDrawer })));
 const CharacterProfile = lazy(() => import('./components/character/CharacterProfile').then((module) => ({ default: module.CharacterProfile })));
@@ -199,13 +200,20 @@ export default function App() {
   const characterController = useCharacterProfile(user && !isDataLoading ? user.id : null, characterRefreshKey);
   const characterFinance = { jars, archivedJars, monthlyIncome, transactions, monthlySummaries, activeCycleStart, preferences };
   const [activeTab, setActiveTab] = useState<'jars' | 'transactions' | 'crypto' | 'analytics' | 'character'>('jars');
+  const [isJarManagementOpen, setIsJarManagementOpen] = useState(false);
+  const [focusedJarId, setFocusedJarId] = useState<string | undefined>();
   const mobileContentRef = useRef<HTMLElement>(null);
 
   useLayoutEffect(() => {
     if (isNativeApp) mobileContentRef.current?.scrollTo(0, 0);
-  }, [activeTab]);
+    else window.scrollTo(0, 0);
+    if (activeTab === 'jars' && isJarManagementOpen && focusedJarId) {
+      window.requestAnimationFrame(() => document.getElementById(`managed-jar-${focusedJarId}`)?.scrollIntoView({ block: 'start' }));
+    }
+  }, [activeTab, isJarManagementOpen, focusedJarId]);
 
   const selectTab = (tab: typeof activeTab) => {
+    if (tab === 'jars') { setIsJarManagementOpen(false); setFocusedJarId(undefined); }
     if (isNativeApp && tab === activeTab) mobileContentRef.current?.scrollTo(0, 0);
     setActiveTab(tab);
   };
@@ -217,6 +225,7 @@ export default function App() {
   const [historicalBalanceDate, setHistoricalBalanceDate] = useState<string | null>(null);
   const [selectedTransactionJarId, setSelectedTransactionJarId] = useState<string | null>(null);
   const [initialTransactionDate, setInitialTransactionDate] = useState<string | undefined>();
+  const [initialTransactionType, setInitialTransactionType] = useState<'expense' | 'income'>('expense');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isBankAccountsModalOpen, setIsBankAccountsModalOpen] = useState(false);
   const [isAIAdvisorOpen, setIsAIAdvisorOpen] = useState(false);
@@ -288,6 +297,9 @@ export default function App() {
       setIsJarPlanModalOpen(false);
       setSelectedTransactionJarId(null);
       setEditingTransaction(null);
+      setIsJarManagementOpen(false);
+      setFocusedJarId(undefined);
+      setInitialTransactionType('expense');
     }
     setUser(nextUser);
   };
@@ -417,9 +429,9 @@ export default function App() {
         setTransactions(loadedTransactions);
         const loadedCustomCategories = Array.isArray(data.customCategories) ? data.customCategories : [];
         setCustomCategories(loadedCustomCategories);
-        const normalizedBankAccounts = (data.bankAccounts || DEFAULT_BANK_ACCOUNTS)
-          .map(canonicalizeBankDetails);
-        const bankAccountMigrationChanged = normalizedBankAccounts.some(
+        const normalizedBankAccounts = syncBankAccountsWithJars(readyJars, (data.bankAccounts || DEFAULT_BANK_ACCOUNTS)
+          .map(canonicalizeBankDetails), loadedTransactions);
+        const bankAccountMigrationChanged = normalizedBankAccounts.length !== (data.bankAccounts || []).length || normalizedBankAccounts.some(
           (account, index) => JSON.stringify(account) !== JSON.stringify(data.bankAccounts?.[index])
         );
         setBankAccounts(normalizedBankAccounts);
@@ -995,11 +1007,10 @@ export default function App() {
     const validateNextTransaction = (transaction: Transaction) => {
       if (transaction.date > todayKey) return 'Ngày giao dịch không được nằm trong tương lai.';
       if (transaction.bankAccountId !== undefined) {
-        if (!isBankOnlyIncome(transaction) || !parseLocalDate(transaction.date) ||
+        if (transaction.type === 'transfer' || !parseLocalDate(transaction.date) ||
           !bankAccounts.some((account) => account.id === transaction.bankAccountId) ||
-          !Number.isFinite(transaction.amount) || transaction.amount <= 0 || transaction.amount > 1_000_000_000_000_000 ||
-          transaction.allocations?.length || transaction.transferToJarId) return 'Tài khoản nhận tiền hoặc khoản thu chưa phân bổ không hợp lệ.';
-        return '';
+          !Number.isFinite(transaction.amount) || transaction.amount <= 0 || transaction.amount > 1_000_000_000_000_000) return 'Tài khoản ngân hàng hoặc giao dịch ngoài hũ không hợp lệ.';
+        if (isBankOnlyTransaction(transaction)) return transaction.allocations?.length || transaction.transferToJarId ? 'Giao dịch ngoài hũ không được phân bổ hạn mức.' : '';
       }
       if (isCurrent(transaction)) {
         if (!activeJarIds.has(transaction.jarId)) return 'Hũ của giao dịch không còn hoạt động.';
@@ -1026,7 +1037,7 @@ export default function App() {
       return '';
     };
     const canMutateExisting = (transaction: Transaction) => {
-      if (isBankOnlyIncome(transaction)) return bankAccounts.some((account) => account.id === transaction.bankAccountId)
+      if (isBankOnlyTransaction(transaction)) return bankAccounts.some((account) => account.id === transaction.bankAccountId)
         && (isCurrent(transaction) || isHistorical(transaction));
       if (archivedJars.some((jar) => (
         jar.id === transaction.jarId ||
@@ -1077,7 +1088,7 @@ export default function App() {
     let nextSummaries = monthlySummaries;
     const historicalChanges = new Map<string, HistoricalCycleChange>();
     const recordHistoricalChange = (item: Transaction | null, sign: 1 | -1) => {
-      if (!item || !isHistorical(item) || isBankOnlyIncome(item)) return;
+      if (!item || !isHistorical(item) || isBankOnlyTransaction(item)) return;
       const date = parseLocalDate(item.date)!;
       const key = toLocalDateKey(getFinancialCycleStart(date, preferences.monthlyResetDay));
       const entry = historicalChanges.get(key) || { jarIds: new Set<string>(),
@@ -1172,7 +1183,7 @@ export default function App() {
       return false;
     }
     setTransactions(nextTransactions);
-    setMonthlySummaries(syncBankIncomeSummaries(nextSummaries, transactions, nextTransactions, preferences.monthlyResetDay));
+    setMonthlySummaries(syncBankTransactionSummaries(nextSummaries, transactions, nextTransactions, preferences.monthlyResetDay));
     setJars(updatedJars);
     setBankAccounts(syncBankAccountsWithJars(updatedJars, bankAccounts, nextTransactions));
     if (previousCurrentIncomes.length || nextCurrentIncomes.length) setMonthlyIncome(nextMonthlyIncome);
@@ -1285,7 +1296,7 @@ export default function App() {
       prev.map((item) =>
         item.id === accountId
           ? { ...item, balance: data.newBalance,
-              unallocatedOpeningBalance: data.newBalance - getBankOnlyIncomeTotal(transactions, accountId), lastSynced: data.lastSynced }
+              openingBalance: getBankOpeningBalance(jars, account, transactions, data.newBalance), balanceReconciled: true, lastSynced: data.lastSynced }
           : item
       )
     );
@@ -1294,7 +1305,7 @@ export default function App() {
   const handleAddBankAccount = (account: Omit<BankAccount, 'id'>) => {
     setBankAccounts((current) => deduplicateBankAccounts([
       ...current,
-      { ...account, id: `bank-manual-${Date.now()}`, isManuallyAdded: true, unallocatedOpeningBalance: account.balance },
+      { ...account, id: `bank-manual-${Date.now()}`, isManuallyAdded: true, openingBalance: account.balance, balanceReconciled: true },
     ]));
   };
 
@@ -1368,12 +1379,12 @@ export default function App() {
 
   const jarRegistry = [...jars, ...archivedJars];
   const appFooter = (
-    <footer className="bg-[#09090b] text-zinc-500 py-6 text-center text-xs border-t border-zinc-800/80 mt-12">
+    <footer data-no-translate="true" className="bg-[#09090b] text-zinc-500 py-6 text-center text-xs border-t border-zinc-800/80 mt-12">
       <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-        <p>© 2026 RoFinance. Quản Lý Hũ Tài Chính & Danh Mục Đầu Tư.</p>
+        <p>© 2026 RoFinance. {preferences.language === 'en' ? 'Personal budgets & investment tracking.' : 'Quản lý hạn mức cá nhân & danh mục đầu tư.'}</p>
         <div className="flex items-center gap-3 text-[11px]">
-          <a href="/privacy-policy" className="text-zinc-500 hover:text-indigo-400">Quyền riêng tư</a>
-          <a href="/terms-of-service" className="text-zinc-500 hover:text-indigo-400">Điều khoản</a>
+          <a href="/privacy-policy" className="text-zinc-500 hover:text-indigo-400">{preferences.language === 'en' ? 'Privacy' : 'Quyền riêng tư'}</a>
+          <a href="/terms-of-service" className="text-zinc-500 hover:text-indigo-400">{preferences.language === 'en' ? 'Terms' : 'Điều khoản'}</a>
         </div>
       </div>
     </footer>
@@ -1396,10 +1407,12 @@ export default function App() {
         user={user}
         preferences={preferences}
         onPreferencesChange={handlePreferencesChange}
+        isAmountsHidden={isAmountsHidden}
+        onToggleHideAmounts={() => setIsAmountsHidden(value => !value)}
       />
 
       {/* Main Container */}
-      <main ref={mobileContentRef} className={`${isNativeApp ? 'mobile-app-content ' : ''}${isRefreshingData ? 'pointer-events-none ' : ''}mx-auto w-full max-w-7xl flex-1 px-2 pb-20 pt-3 sm:px-6 sm:pb-24 sm:pt-6 lg:px-8`}>
+      <main ref={mobileContentRef} className={`${isNativeApp ? 'mobile-app-content ' : ''}${isRefreshingData ? 'pointer-events-none ' : ''}relative mx-auto w-full max-w-7xl flex-1 px-2 pb-20 pt-3 sm:px-6 sm:pb-24 sm:pt-6 lg:px-8`}>
         {dailyRewardNotice && <div data-no-translate="true" role="status" className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-4 text-sm text-indigo-300"><span>{preferences.language === 'en' ? '+20 draw points for logging an expense today!' : '+20 điểm quay thưởng vì đã ghi chi tiêu hôm nay!'}</span><button type="button" onClick={() => setDailyRewardNotice(false)} aria-label={preferences.language === 'en' ? 'Dismiss reward notification' : 'Đóng thông báo điểm thưởng'} className="min-h-11 min-w-11 cursor-pointer rounded-xl p-2"><X size={16}/></button></div>}
         {rolloverNotice && (
           <div className="mb-4 flex items-start gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-emerald-50 shadow-lg shadow-emerald-950/10" role="status">
@@ -1448,12 +1461,13 @@ export default function App() {
           </div>
         )}
         {/* Budget Alerts Banner */}
-        {activeTab !== 'character' && <BudgetAlertsBanner
+        {activeTab !== 'character' && (activeTab !== 'jars' || isJarManagementOpen) && <BudgetAlertsBanner
           jars={jars}
           onOpenAIAdvisor={openAIAdvisor}
           onOpenTransactionModal={(jarId) => {
             setSelectedTransactionJarId(jarId);
             setInitialTransactionDate(undefined);
+            setInitialTransactionType('expense');
             setEditingTransaction(null);
             setIsTransactionModalOpen(true);
           }}
@@ -1465,8 +1479,17 @@ export default function App() {
           <CharacterProfile controller={characterController} finance={characterFinance} language={preferences.language}
             onBack={() => selectTab('jars')} onAccount={() => setIsAuthModalOpen(true)}/>
         </Suspense>}
-        {activeTab === 'jars' && (
-          <><CharacterCompanion profile={characterController.profile} finance={characterFinance} language={preferences.language} onOpen={() => selectTab('character')}/>
+        {activeTab === 'jars' && !isJarManagementOpen && <Suspense fallback={<p className="py-8 text-center text-sm text-zinc-400">{preferences.language === 'en' ? 'Loading overview…' : 'Đang tải tổng quan…'}</p>}>
+          <OverviewDashboard key={user.id} jars={jars} jarRegistry={jarRegistry} transactions={transactions} bankAccounts={bankAccounts}
+            summaries={monthlySummaries} monthlyIncome={monthlyIncome} resetDay={preferences.monthlyResetDay} customCategories={customCategories} isAmountsHidden={isAmountsHidden}
+            onManageJars={jarId => { setFocusedJarId(jarId); setIsJarManagementOpen(true); }}
+            onManageAccounts={() => setIsBankAccountsModalOpen(true)}
+            onAddTransaction={(date, type) => { setSelectedTransactionJarId(null); setInitialTransactionDate(date); setInitialTransactionType(type); setEditingTransaction(null); setIsTransactionModalOpen(true); }}
+            onEditTransaction={transaction => { setSelectedTransactionJarId(transaction.jarId); setInitialTransactionDate(transaction.date); setEditingTransaction(transaction); setIsTransactionModalOpen(true); }}/>
+        </Suspense>}
+        {activeTab === 'jars' && isJarManagementOpen && (
+          <><div data-no-translate="true" className="mb-4 flex items-center justify-between gap-3"><h1 className="text-lg font-black text-white">{preferences.language === 'en' ? 'Manage financial jars' : 'Quản lý hũ tài chính'}</h1><button type="button" onClick={() => { setIsJarManagementOpen(false); setFocusedJarId(undefined); }} className="min-h-11 cursor-pointer rounded-xl border border-zinc-700 px-3 py-2 text-xs font-bold text-zinc-200 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">{preferences.language === 'en' ? 'Back to overview' : 'Về tổng quan'}</button></div>
+          <CharacterCompanion profile={characterController.profile} finance={characterFinance} language={preferences.language} onOpen={() => selectTab('character')}/>
           <JarManagement
             transactions={transactions}
             jars={jars}
@@ -1476,6 +1499,7 @@ export default function App() {
             onOpenTransactionModal={(jarId) => {
               setSelectedTransactionJarId(jarId || null);
               setInitialTransactionDate(undefined);
+              setInitialTransactionType('expense');
               setEditingTransaction(null);
               setIsTransactionModalOpen(true);
             }}
@@ -1502,6 +1526,7 @@ export default function App() {
             onOpenTransactionModal={(date) => {
               setSelectedTransactionJarId(null);
               setInitialTransactionDate(date);
+              setInitialTransactionType('expense');
               setEditingTransaction(null);
               setIsTransactionModalOpen(true);
             }}
@@ -1549,11 +1574,13 @@ export default function App() {
             jars={jars}
             jarRegistry={jarRegistry}
             transactions={transactions}
+            customCategories={customCategories}
+            bankAccounts={bankAccounts}
             monthlyIncome={monthlyIncome}
             isAmountsHidden={isAmountsHidden}
             monthlySummaries={monthlySummaries}
             resetDay={preferences.monthlyResetDay}
-            onExportExcel={supportsReportExport ? (cycle) => exportToExcel(jars, cycle.transactions, cycle.income, jarRegistry, cycle) : undefined}
+            onExportExcel={supportsReportExport ? (cycle) => exportToExcel(jars, cycle.transactions, cycle.income, jarRegistry, cycle, bankAccounts) : undefined}
             onExportPDF={supportsReportExport ? (cycle) => exportToPDFPrint(jars, cycle.transactions, cycle.income, jarRegistry, cycle) : undefined}
             onUpdateSummaryIncome={(summaryId, income) => setMonthlySummaries((current) =>
               current.map((summary) => summary.id === summaryId
@@ -1641,6 +1668,7 @@ export default function App() {
           setIsTransactionModalOpen(false);
           setEditingTransaction(null);
           setInitialTransactionDate(undefined);
+          setInitialTransactionType('expense');
         }}
         jars={jars}
         onAddTransaction={handleAddTransaction}
@@ -1652,6 +1680,7 @@ export default function App() {
         ))}
         initialJarId={selectedTransactionJarId}
         initialDate={initialTransactionDate}
+        initialType={initialTransactionType}
         resetDay={preferences.monthlyResetDay}
         editingTransaction={editingTransaction}
         monthlySummaries={monthlySummaries}

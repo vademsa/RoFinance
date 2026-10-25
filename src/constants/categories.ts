@@ -115,23 +115,15 @@ export const DEFAULT_INCOME_CATEGORIES: TransactionCategory[] = [
 
 export function getTransactionCategories(
   type: 'expense' | 'income',
-  jarCode: string | undefined,
+  _jarCode: string | undefined,
   customCategories: TransactionCategory[],
 ) {
   const defaults = type === 'income'
     ? DEFAULT_INCOME_CATEGORIES
-    : DEFAULT_EXPENSE_CATEGORIES_BY_JAR_CODE[jarCode || ''] ||
-      (jarCode ? [expense('other', 'Khác', 'tag', jarCode)] : []);
-  const custom = customCategories.filter((category) =>
-    category.type === type && (type === 'income' || category.jarCode === jarCode)
-  );
-  const seen = new Set<string>();
-  return [...defaults, ...custom].filter((category) => {
-    const key = category.name.trim().toLocaleLowerCase('vi-VN');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    : Object.values(DEFAULT_EXPENSE_CATEGORIES_BY_JAR_CODE).flat();
+  // jarCode remains legacy provenance only. Never hide a saved custom ID just
+  // because another category has the same name (old per-jar duplicates exist).
+  return [...defaults, ...customCategories.filter(category => category.type === type)];
 }
 
 export function findTransactionCategory(
@@ -139,7 +131,9 @@ export function findTransactionCategory(
   type: 'expense' | 'income',
   jarCode: string | undefined,
   customCategories: TransactionCategory[],
+  categoryId?: string,
 ) {
-  return getTransactionCategories(type, jarCode, customCategories)
-    .find((category) => category.name === name);
+  const options = getTransactionCategories(type, jarCode, customCategories);
+  return (categoryId ? options.find(category => category.id === categoryId) : undefined)
+    || options.find(category => category.name === name);
 }

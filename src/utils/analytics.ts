@@ -1,5 +1,5 @@
-import type { Jar, JarCarryover, MonthlyCycleSummary, Transaction } from '../types';
-import { isBankOnlyIncome } from '../../shared/transactions';
+import type { Jar, JarCarryover, MonthlyCycleSummary, Transaction, TransactionCategory } from '../types';
+import { isBankOnlyIncome, isBankOnlyExpense } from '../../shared/transactions';
 import {
   getClosingCarryovers,
   getCycleTransactions,
@@ -45,6 +45,7 @@ export interface CategoryTotal {
   name: string;
   amount: number;
   count: number;
+  isCustom?: boolean;
 }
 
 const amount = (value: number | undefined) =>
@@ -52,17 +53,29 @@ const amount = (value: number | undefined) =>
 
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 
-export function getCategoryTotals(transactions: Transaction[], type: 'income' | 'expense'): CategoryTotal[] {
+const categoryName = (transaction: Transaction) => transaction.category?.trim() || 'Chưa phân loại';
+
+export function getCategoryTransactions(transactions: Transaction[], type: 'income' | 'expense', name: string): Transaction[] {
+  return transactions.filter(transaction => transaction.type === type && amount(transaction.amount) > 0 && categoryName(transaction) === name)
+    .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+}
+
+export function getCategoryTotals(transactions: Transaction[], type: 'income' | 'expense', customCategories: TransactionCategory[] = []): CategoryTotal[] {
   const totals = new Map<string, CategoryTotal>();
+  const customNames = new Set(customCategories.filter(category => category.type === type).map(category => category.name));
   transactions.filter((transaction) => transaction.type === type).forEach((transaction) => {
     const value = amount(transaction.amount);
     if (!value) return;
-    const name = transaction.category?.trim() || 'Chưa phân loại';
+    const name = categoryName(transaction);
     const previous = totals.get(name);
     totals.set(name, {
       name,
       amount: (previous?.amount || 0) + value,
       count: (previous?.count || 0) + 1,
+      // Keep the saved label (including labels from deleted/renamed categories).
+      // Custom names must not pass through the automatic UI translator.
+      isCustom: previous?.isCustom || transaction.categoryId?.startsWith('custom-')
+        || customNames.has(name),
     });
   });
   return [...totals.values()].sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, 'vi'));
@@ -92,8 +105,13 @@ export function buildAnalyticsCycles({
   currentEndInclusive.setDate(currentEndInclusive.getDate() - 1);
   const currentTransactions = getCycleTransactions(transactions, currentStart, currentEnd);
   const currentSpending = new Map<string, number>();
+  const currentBankExpense = new Map<string, number>();
   currentTransactions.filter((transaction) => transaction.type === 'expense').forEach((transaction) => {
-    currentSpending.set(transaction.jarId, (currentSpending.get(transaction.jarId) || 0) + amount(transaction.amount));
+    if (isBankOnlyExpense(transaction)) {
+      currentBankExpense.set(transaction.bankAccountId!, (currentBankExpense.get(transaction.bankAccountId!) || 0) + amount(transaction.amount));
+    } else {
+      currentSpending.set(transaction.jarId, (currentSpending.get(transaction.jarId) || 0) + amount(transaction.amount));
+    }
   });
   const currentJars: AnalyticsJarRow[] = jars.map((jar) => {
     const spent = currentSpending.get(jar.id) || 0;
@@ -115,7 +133,9 @@ export function buildAnalyticsCycles({
     };
   });
   const currentIncome = amount(monthlyIncome) + sum(currentTransactions.filter(isBankOnlyIncome).map((item) => amount(item.amount)));
-  const currentExpense = sum([...currentSpending.values()]);
+  const currentJarExpense = sum([...currentSpending.values()]);
+  const currentBankOnlyExpense = sum([...currentBankExpense.values()]);
+  const currentExpense = currentJarExpense + currentBankOnlyExpense;
   const current: AnalyticsCycle = {
     id: currentStartKey,
     start: currentStartKey,
@@ -142,7 +162,10 @@ export function buildAnalyticsCycles({
     endExclusive.setDate(endExclusive.getDate() + 1);
     const cycleTransactions = getCycleTransactions(transactions, start, endExclusive);
     const recordedExpenses = cycleTransactions.filter((transaction) => transaction.type === 'expense');
-    const recordedExpense = sum(recordedExpenses.map((transaction) => amount(transaction.amount)));
+    const recordedJarExpenses = recordedExpenses.filter((t) => !isBankOnlyExpense(t));
+    const recordedBankExpenses = recordedExpenses.filter((t) => isBankOnlyExpense(t));
+    const recordedExpense = sum(recordedJarExpenses.map((transaction) => amount(transaction.amount)))
+      + sum(recordedBankExpenses.map((transaction) => amount(transaction.amount)));
     // Older imports can have only a saved summary. Recalculate only when its
     // detailed transactions are present; otherwise keep the historical total.
     const hasCompleteExpenseDetails = (summary.transactionCount > 0
@@ -154,7 +177,7 @@ export function buildAnalyticsCycles({
       : summary;
     const expenseByJar = new Map<string, number>();
     if (hasCompleteExpenseDetails) {
-      recordedExpenses.forEach((transaction) => {
+      recordedJarExpenses.forEach((transaction) => {
         expenseByJar.set(transaction.jarId, (expenseByJar.get(transaction.jarId) || 0) + amount(transaction.amount));
       });
     }

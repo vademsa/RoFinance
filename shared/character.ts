@@ -1,4 +1,5 @@
 import type { Jar, MonthlyCycleSummary, Transaction } from '../src/types';
+import { isBankOnlyExpense } from './transactions';
 
 export const ITEM_SLOTS = ['shirt', 'hat', 'shoes', 'hair', 'face', 'expression', 'backpack'] as const;
 export type ItemSlot = typeof ITEM_SLOTS[number];
@@ -188,7 +189,7 @@ export function assessSummary(summary: MonthlyCycleSummary, today: string): Asse
   const expenses = summary.expense > 0 ? summary.spendingByJar.filter((item) => item.amount > 0).length : 0;
   return assessBudgets(summary.jarBreakdown.map((item) => ({
     available: item.availableBudget, spent: item.spent, code: item.jarCode, archived: item.isArchived,
-  })), summary.income, summary.cycleStart, summary.cycleEnd, today, expenses);
+  })), Math.max(0, summary.income - (summary.unallocatedIncome || 0)), summary.cycleStart, summary.cycleEnd, today, expenses);
 }
 export function assessFinance(data: FinanceForCharacter, today: string, selectedStart?: string): Assessment {
   const cycle = salaryCycle(today, data.preferences?.monthlyResetDay || 1);
@@ -198,7 +199,7 @@ export function assessFinance(data: FinanceForCharacter, today: string, selected
   if (data.activeCycleStart !== cycle.start) {
     return { mood: 'steady', score: null, eligible: false, reasons: ['incomplete'], cycleStart: cycle.start, cycleEnd: cycle.end };
   }
-  const transactions = (Array.isArray(data.transactions) ? data.transactions : []).filter((item) => item?.type === 'expense' && item.date >= cycle.start && item.date <= today);
+  const transactions = (Array.isArray(data.transactions) ? data.transactions : []).filter((item) => item?.type === 'expense' && !isBankOnlyExpense(item) && item.date >= cycle.start && item.date <= today);
   const active = (Array.isArray(data.jars) ? data.jars : []).filter((jar) => jar && typeof jar.id === 'string');
   const archived = (Array.isArray(data.archivedJars) ? data.archivedJars : []).filter((jar) => jar && typeof jar.id === 'string' && !active.some((item) => item.id === jar.id));
   if (transactions.some((item) => !finiteMoney(item.amount) || ![...active, ...archived].some((jar) => jar.id === item.jarId))) {

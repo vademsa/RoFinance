@@ -1,5 +1,5 @@
 import { BankAccount, Jar, Transaction } from '../types';
-import { isBankOnlyIncome } from '../../shared/transactions';
+import { isBankOnlyIncome, isBankOnlyExpense, isBankOnlyTransaction } from '../../shared/transactions';
 import { findBankByCode } from '../../shared/banks';
 
 const BANK_CODE_ALIASES: Record<string, string> = {
@@ -112,7 +112,8 @@ export function linkJarToBankAccount(jar: Jar, account: BankAccount): Jar {
   };
 }
 
-export function getDerivedBankBalance(
+/** Remaining linked-jar budget only; this is not an account balance. */
+export function getLinkedJarBudgetRemaining(
   jars: Jar[],
   account: Pick<BankAccount, 'bankCode' | 'accountNumber'>,
 ) {
@@ -158,11 +159,30 @@ export function getBankOnlyIncomeTotal(transactions: Transaction[], accountId: s
 }
 
 export function getBankAccountBalance(jars: Jar[], account: BankAccount, transactions: Transaction[] = []) {
-  const linked = getJarsLinkedToBankAccount(jars, account).length > 0;
-  const opening = account.unallocatedOpeningBalance ?? (linked ? 0 : account.balance);
-  const jarBalance = getJarsLinkedToBankAccount(jars, account).reduce((total, jar) => total + jar.targetBudget - jar.currentSpent, 0);
-  return Math.max(0, Math.round(jarBalance
-    + opening + getBankOnlyIncomeTotal(transactions, account.id)));
+  // Legacy balances are kept as an unconfirmed observation, never reconstructed from budgets.
+  return account.openingBalance === undefined ? account.balance
+    : Math.max(0, Math.round(account.openingBalance + getAccountTransactionNet(transactions, account.id)));
+}
+
+export function getAccountTransactionNet(transactions: Transaction[], accountId: string) {
+  return transactions.filter(t => t.bankAccountId === accountId && (t.type === 'income' || t.type === 'expense'))
+    .reduce((sum, t) => sum + (t.type === 'expense' ? -t.amount : t.amount), 0);
+}
+
+export function initializeAccountLedger(jars: Jar[], account: BankAccount, transactions: Transaction[]): BankAccount {
+  if (account.openingBalance !== undefined) return account;
+  return { ...account, openingBalance: account.balance - getAccountTransactionNet(transactions, account.id),
+    balanceReconciled: Boolean(account.isManuallyAdded && !getJarsLinkedToBankAccount(jars, account).length) };
+}
+
+export function getBankOnlyNetTotal(transactions: Transaction[], accountId: string) {
+  return transactions.filter(transaction => isBankOnlyTransaction(transaction) && transaction.bankAccountId === accountId)
+    .reduce((total, transaction) => total + (isBankOnlyExpense(transaction) ? -transaction.amount : transaction.amount), 0);
+}
+
+/** Reconcile the actual account balance; budgets must never participate. */
+export function getBankOpeningBalance(jars: Jar[], account: BankAccount, transactions: Transaction[], balance: number) {
+  return balance - getAccountTransactionNet(transactions, account.id);
 }
 
 export function syncBankAccountsWithJars(jars: Jar[], accounts: BankAccount[], transactions: Transaction[] = []): BankAccount[] {
@@ -180,25 +200,27 @@ export function syncBankAccountsWithJars(jars: Jar[], accounts: BankAccount[], t
     const current = currentAccounts.find((account) => bankAccountKey(account) === key);
     const account = {
       id: current?.id || `bank-${firstJar.id}`,
-      bankName: firstJar.bankName,
+      bankName: current?.bankName || firstJar.bankName,
       bankCode: normalizeBankCode(firstJar.bankCode),
       accountNumber: firstJar.accountNumber.trim(),
-      accountHolder: firstJar.accountName || current?.accountHolder || '',
-      balance: 0,
+      accountHolder: current?.accountHolder || firstJar.accountName || '',
+      balance: current?.balance ?? 0,
+      ...(current?.openingBalance !== undefined ? { openingBalance: current.openingBalance } : {}),
+      ...(current?.balanceReconciled !== undefined ? { balanceReconciled: current.balanceReconciled } : {}),
       unallocatedOpeningBalance: current?.unallocatedOpeningBalance ?? 0,
       lastSynced: current?.lastSynced || 'Tự động từ hũ',
       status: 'connected' as const,
       linkedJarCode: linkedJars.length === 1 ? firstJar.code : undefined,
       isManuallyAdded: Boolean(current?.isManuallyAdded),
     };
-    return { ...account, balance: getBankAccountBalance(jars, account, transactions) };
+    const initialized = initializeAccountLedger(jars, account, transactions);
+    return { ...initialized, balance: getBankAccountBalance(jars, initialized, transactions) };
   });
   const linkedKeys = new Set(linkedAccounts.map(bankAccountKey));
   const standaloneAccounts = currentAccounts.filter((account) => (
-    (account.isManuallyAdded || transactions.some((transaction) => isBankOnlyIncome(transaction) && transaction.bankAccountId === account.id))
-      && !linkedKeys.has(bankAccountKey(account))
+    !linkedKeys.has(bankAccountKey(account))
   )).map((account) => {
-    const initialized = { ...account, unallocatedOpeningBalance: account.unallocatedOpeningBalance ?? account.balance };
+    const initialized = initializeAccountLedger(jars, account, transactions);
     return { ...initialized, balance: getBankAccountBalance(jars, initialized, transactions) };
   });
 

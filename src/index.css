@@ -56,6 +56,9 @@
   background: #3f3f46;
 }
 
+:root { --overview-chart-text: #a1a1aa; }
+html[data-theme='light'] { --overview-chart-text: #52525b; }
+
 html[data-theme='light'] body {
   background-color: #f4f4f5;
   color: #18181b;

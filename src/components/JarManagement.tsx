@@ -151,6 +151,7 @@ export const JarManagement: React.FC<JarManagementProps> = ({
             <p className="text-xs text-zinc-400 mt-2 max-w-xl leading-relaxed">
               Chọn mẫu phù hợp hoặc tự điều chỉnh các hũ theo thu nhập và phong cách sống của bạn.
             </p>
+            <p className="mt-2 text-xs font-semibold text-indigo-300">Hũ là hạn mức chi tiêu theo chu kỳ, không phải số dư thực trong ngân hàng.</p>
           </div>
 
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-4">
@@ -261,7 +262,8 @@ export const JarManagement: React.FC<JarManagementProps> = ({
           return (
             <div
               key={jar.id}
-              className={`bg-[#121214] rounded-2xl sm:rounded-[28px] p-4 sm:p-6 border transition-all duration-200 shadow-xl flex flex-col justify-between relative overflow-hidden group hover:border-zinc-700 ${
+              id={`managed-jar-${jar.id}`}
+              className={`scroll-mt-36 bg-[#121214] rounded-2xl sm:rounded-[28px] p-4 sm:p-6 border transition-all duration-200 shadow-xl flex flex-col justify-between relative overflow-hidden group hover:border-zinc-700 ${
                 isDanger
                   ? 'border-rose-500/50 bg-rose-950/10 ring-1 ring-rose-500/30'
                   : isWarning
@@ -622,7 +624,7 @@ export const JarManagement: React.FC<JarManagementProps> = ({
           </div>
         </div>
       )}
-      <ReceiveQRModal jar={receivingJar} isAmountsHidden={isAmountsHidden} onClose={() => setReceivingJar(null)} />
+      <ReceiveQRModal jar={receivingJar ? jars.find(jar => jar.id === receivingJar.id) || null : null} isAmountsHidden={isAmountsHidden} onClose={() => setReceivingJar(null)} />
     </div>
   );
 };

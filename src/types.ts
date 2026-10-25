@@ -16,7 +16,7 @@ export interface TransactionCategory {
   name: string;
   type: 'expense' | 'income';
   icon: CategoryIconKey;
-  jarCode?: string;
+  jarCode?: string; // Legacy category provenance; categories are shared across jars.
   isCustom?: boolean;
   createdAt?: string;
 }
@@ -53,7 +53,7 @@ export interface Transaction {
   type: 'income' | 'expense' | 'transfer';
   amount: number;
   jarId: string;
-  bankAccountId?: string; // Bank-only income uses an empty jarId and no allocations.
+  bankAccountId?: string; // Direct bank income/expense uses an empty jarId and no allocations.
   category: string;
   categoryId?: string;
   categoryIcon?: CategoryIconKey;
@@ -80,6 +80,8 @@ export interface BankAccount {
   accountNumber: string;
   accountHolder: string;
   balance: number;
+  openingBalance?: number; // Independent ledger baseline; never calculated from jar limits.
+  balanceReconciled?: boolean; // False for legacy jar-derived balances until the user confirms a real balance.
   unallocatedOpeningBalance?: number; // Reconciled funds outside jars, before bank-only receipts.
   lastSynced: string;
   status: 'connected' | 'disconnected' | 'syncing';
@@ -108,6 +110,7 @@ export interface MonthlyCycleSummary {
   cycleEnd: string;
   income: number;
   unallocatedIncome?: number; // Bank-only receipts already included in income; avoids double counting.
+  unallocatedExpense?: number; // Direct bank expenses already included in expense, never in jar spending.
   expense: number;
   transactionCount: number;
   spendingByJar: { jarId: string; amount: number }[];
